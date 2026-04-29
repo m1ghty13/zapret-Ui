@@ -32,10 +32,8 @@ python main.py
 ### Сборка .exe
 
 ```cmd
-build_windows.bat
+scripts\build_windows.bat
 ```
-
-Подробнее: [BUILD_WINDOWS.md](BUILD_WINDOWS.md)
 
 ## 📋 Использование
 
