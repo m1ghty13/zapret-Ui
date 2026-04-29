@@ -1,0 +1,94 @@
+# Claude files
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Documentation (keeping only README.md)
+DONE.txt
+FILES_CREATED.txt
+CHECKLIST.md
+MIGRATION.md
+PERFORMANCE.md
+SUMMARY.md
+ATTRIBUTIONS.md
+FAQ.md
+QUICKSTART_RU.md
+README_NEW.md
+START_HERE_v2.1.txt
+START_HERE.txt
+TRAY_GUIDE.md
+TRAY_UPDATE.md
+FINAL_SUMMARY.md
+FINAL_STATUS.txt
+MACOS_GUIDE.md
+BUILD_WINDOWS.md
+WINDOWS_QUICKSTART.md
+WINDOWS_TESTING.md
+WINDOWS_READY.md
+WINDOWS_BUILD_COMPLETE.md
+TRANSFER_TO_WINDOWS.md
+NO_NODEJS_REQUIRED.md
+READY_FOR_WINDOWS.txt
+AUTO_INSTALL.md
+EXE_DISTRIBUTION.md
+CHANGELOG.md
+PROJECT_FILES.md
+README_USER.txt
+
+# Keep only these
+!README.md
+!requirements.txt
+!package.json

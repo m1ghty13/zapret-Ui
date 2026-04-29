@@ -1,0 +1,11 @@
+{
+  "name": "SIMPLE FAKE ALT",
+  "args": [
+    "--wf-tcp=80,443",
+    "--wf-udp=443,50000-65535",
+    "--dpi-desync=fake",
+    "--dpi-desync-ttl=8",
+    "--dpi-desync-fooling=md5sig",
+    "--hostlist={hostlist}"
+  ]
+}

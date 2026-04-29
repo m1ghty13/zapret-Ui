@@ -1,0 +1,20 @@
+{
+  "current_strategy": "ALT",
+  "enabled_groups": [
+    "Discord",
+    "YouTube"
+  ],
+  "autostart": false,
+  "minimize_to_tray": true,
+  "auto_test_on_first_run": true,
+  "is_first_run": true,
+  "secure_dns_hint": true,
+  "winws_path": "bin/winws.exe",
+  "hostlist_path": "lists/hostlist.txt",
+  "tested_strategies": {},
+  "test_domains": [
+    "discord.com",
+    "youtube.com",
+    "instagram.com"
+  ]
+}

@@ -1,0 +1,9 @@
+twitch.tv
+twitchapps.com
+twitchsvc.net
+jtvnw.net
+twitchstatic.com
+*.twitch.tv
+*.jtvnw.net
+live.twitch.tv
+clips.twitch.tv

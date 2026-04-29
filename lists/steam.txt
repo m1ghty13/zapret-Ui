@@ -1,0 +1,10 @@
+store.steampowered.com
+steamcommunity.com
+steamstatic.com
+steampowered.com
+steam-chat.com
+steamgames.com
+*.steampowered.com
+*.steamcommunity.com
+*.steamstatic.com
+*.steam-chat.com

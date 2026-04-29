@@ -1,0 +1,6 @@
+telegram.org
+t.me
+telegram.me
+core.telegram.org
+*.telegram.org
+*.t.me

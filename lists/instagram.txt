@@ -1,0 +1,12 @@
+instagram.com
+cdninstagram.com
+fbcdn.net
+facebook.com
+fb.com
+messenger.com
+fb.me
+*.instagram.com
+*.cdninstagram.com
+*.facebook.com
+*.fbcdn.net
+meta.com

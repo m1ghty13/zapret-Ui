@@ -1,0 +1,7 @@
+tiktok.com
+tiktokcdn.com
+tiktokv.com
+musical.ly
+*.tiktok.com
+*.tiktokcdn.com
+*.tiktokv.com

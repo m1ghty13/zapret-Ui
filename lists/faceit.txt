@@ -1,0 +1,5 @@
+faceit.com
+faceitvideo.com
+*.faceit.com
+client.faceit.com
+api.faceit.com

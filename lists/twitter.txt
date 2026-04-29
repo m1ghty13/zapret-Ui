@@ -1,0 +1,9 @@
+twitter.com
+x.com
+t.co
+twimg.com
+twitterstatic.com
+api.twitter.com
+*.twitter.com
+*.x.com
+*.twimg.com

@@ -1,0 +1,12 @@
+{
+  "name": "FAKE TLS AUTO ALT",
+  "args": [
+    "--wf-tcp=80,443",
+    "--wf-udp=443,50000-65535",
+    "--dpi-desync=fake",
+    "--dpi-desync-ttl=6",
+    "--dpi-desync-fake-tls=1",
+    "--dpi-desync-fooling=md5sig",
+    "--hostlist={hostlist}"
+  ]
+}

@@ -1,0 +1,10 @@
+epicgames.com
+unrealengine.com
+fortnite.com
+riotgames.com
+leagueoflegends.com
+valorant.com
+*.epicgames.com
+*.riotgames.com
+*.leagueoflegends.com
+*.valorant.com

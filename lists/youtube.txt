@@ -1,0 +1,11 @@
+youtube.com
+youtu.be
+googlevideo.com
+yt3.ggpht.com
+ytimg.com
+youtube-nocookie.com
+*.youtube.com
+*.googlevideo.com
+*.ytimg.com
+www.youtube.com
+m.youtube.com

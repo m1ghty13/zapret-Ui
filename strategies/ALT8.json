@@ -1,0 +1,11 @@
+{
+  "name": "ALT8",
+  "args": [
+    "--wf-tcp=80,443",
+    "--wf-udp=443,50000-65535",
+    "--dpi-desync=fake,split2",
+    "--dpi-desync-ttl=5",
+    "--dpi-desync-fooling=md5sig",
+    "--hostlist={hostlist}"
+  ]
+}
