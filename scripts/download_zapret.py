@@ -10,7 +10,7 @@ ROOT = Path(__file__).parent.parent
 BIN = ROOT / "bin"
 BIN.mkdir(exist_ok=True)
 
-NEEDED = {"winws.exe", "WinDivert.dll", "WinDivert64.sys"}
+NEEDED = {"winws.exe", "WinDivert.dll", "WinDivert64.sys", "cygwin1.dll"}
 ARCH_DIR = "windows-x86_64"
 
 API = "https://api.github.com/repos/bol-van/zapret/releases/latest"
