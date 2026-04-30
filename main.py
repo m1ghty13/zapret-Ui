@@ -150,8 +150,20 @@ def check_admin() -> bool:
         import ctypes
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
-        # Не Windows — разрешаем запуск для разработки
-        return True
+        return True  # не Windows — разрешаем для разработки
+
+
+def request_elevation() -> None:
+    """Перезапускает процесс с правами администратора через UAC."""
+    import ctypes
+    exe = sys.executable
+    params = " ".join(f'"{a}"' for a in sys.argv)
+    # ShellExecuteW с глаголом runas вызывает UAC-диалог
+    ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+    if ret <= 32:
+        # Пользователь отказал или ошибка — показываем предупреждение и продолжаем
+        pass
+    sys.exit(0)
 
 
 def main() -> None:
@@ -163,9 +175,11 @@ def main() -> None:
     # Загружаем конфиг
     cfg.load()
 
-    # Предупреждение о правах администратора
-    if not check_admin():
-        log.warning("Running without admin privileges")
+    # Запрашиваем права администратора — winws.exe требует elevation
+    if sys.platform == "win32" and not check_admin():
+        log.warning("Not admin — requesting elevation via UAC")
+        request_elevation()
+        return  # никогда не достигается если UAC принят
 
     # Создаём Qt приложение
     app = QApplication(sys.argv)
