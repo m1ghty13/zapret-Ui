@@ -7,12 +7,14 @@ ROOT = Path(__file__).parent.parent
 
 
 def main() -> None:
+    manifest_path = ROOT / "scripts" / "ZapretUI.manifest"
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",
         "--name=ZapretUI",
         "--icon=assets/icon.ico",
+        "--manifest", str(manifest_path),
         "--add-data", "bin;bin",
         "--add-data", "lists;lists",
         "--add-data", "strategies;strategies",
