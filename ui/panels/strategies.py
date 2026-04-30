@@ -1,81 +1,30 @@
-"""Панель «Стратегии» — список, авто-тест, прогресс-бар."""
+"""Панель «Стратегии»."""
 import logging
-import os
 from typing import Any
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
-    QProgressBar, QFrame, QCheckBox, QSizePolicy,
-    QScrollArea, QMessageBox, QFileDialog,
+    QProgressBar, QFrame, QSplitter, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor
 
 import core.config as cfg
 import core.strategies as strats
-from core.exporter import export_to_bat, export_bundle
 
 log = logging.getLogger(__name__)
 
-_STATUS_MAP = {
-    "works":   ("Работает",      "BadgeWorks"),
-    "partial": ("Частично",      "BadgePartial"),
-    "fails":   ("Не работает",   "BadgeFails"),
-    "error":   ("Ошибка",        "BadgeFails"),
-    None:      ("Не проверено",  "BadgeNone"),
-}
-
 _TEST_DOMAINS = [
-    "discord.com", "youtube.com", "faceit.com",
-    "instagram.com", "twitch.tv", "spotify.com",
+    "youtube.com", "instagram.com", "twitter.com",
+    "discord.com",  "telegram.org",  "twitch.tv",
 ]
 
 
-class _StrategyItem(QWidget):
-    """Строка в списке: имя стратегии + бейдж статуса + кнопка экспорта."""
-
-    def __init__(self, name: str, status: str | None = None, parent=None):
-        super().__init__(parent)
-        self._name = name
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(4, 2, 4, 2)
-
-        self._name_lbl = QLabel(name)
-        self._name_lbl.setFont(QFont("Segoe UI Variable", 13))
-        lay.addWidget(self._name_lbl, stretch=1)
-
-        self._badge = QLabel()
-        self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._badge.setFixedWidth(110)
-        lay.addWidget(self._badge)
-
-        # Кнопка экспорта
-        self._export_btn = QPushButton("📦")
-        self._export_btn.setFixedSize(32, 32)
-        self._export_btn.setObjectName("Secondary")
-        self._export_btn.setToolTip("Экспортировать как .bat")
-        self._export_btn.clicked.connect(self._on_export)
-        lay.addWidget(self._export_btn)
-
-        self.set_status(status)
-
-    def set_status(self, status: str | None) -> None:
-        text, obj_name = _STATUS_MAP.get(status, _STATUS_MAP[None])
-        self._badge.setText(text)
-        self._badge.setObjectName(obj_name)
-        self._badge.style().unpolish(self._badge)
-        self._badge.style().polish(self._badge)
-
-    def _on_export(self) -> None:
-        """Обработка клика по кнопке экспорта."""
-        # Получаем родительскую панель
-        panel = self.parent()
-        while panel and not isinstance(panel, StrategiesPanel):
-            panel = panel.parent()
-
-        if panel:
-            panel.export_strategy(self._name)
+def _card(parent=None) -> QFrame:
+    f = QFrame(parent)
+    f.setObjectName("Card")
+    return f
 
 
 class StrategiesPanel(QWidget):
@@ -83,264 +32,231 @@ class StrategiesPanel(QWidget):
         super().__init__(parent)
         self._runner = runner
         self._tester = tester
-        self._items: dict[str, _StrategyItem] = {}
-        self._list_items: dict[str, QListWidgetItem] = {}
-        self._selected_test_domains: set[str] = set(cfg.get("test_domains", ["discord.com", "youtube.com"]))
+        self._test_scores: dict[str, dict[str, Any]] = {}
+        self._selected_test_domains: set[str] = set(_TEST_DOMAINS)
         self._build()
-        self._load_tested_results()
 
     def _build(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 32, 32, 32)
-        root.setSpacing(16)
+        root.setSpacing(20)
 
-        # Заголовок
+        # ── Заголовок ──────────────────────────────────────────────────────
         hdr = QHBoxLayout()
         title = QLabel("Стратегии")
-        title.setStyleSheet("font-size: 22px; font-weight: 700;")
+        title.setObjectName("PageTitle")
         hdr.addWidget(title)
         hdr.addStretch()
 
-        self._lbl_active = QLabel()
-        self._lbl_active.setStyleSheet("color: #8e8e93; font-size: 12px;")
-        self._update_active_label()
-        hdr.addWidget(self._lbl_active)
+        self._btn_test = QPushButton("  ⚡  Авто-тест")
+        self._btn_test.clicked.connect(self.start_auto_test)
+
+        self._btn_stop = QPushButton("  ✕  Стоп")
+        self._btn_stop.setObjectName("Danger")
+        self._btn_stop.clicked.connect(self._stop_test)
+        self._btn_stop.setVisible(False)
+
+        hdr.addWidget(self._btn_test)
+        hdr.addWidget(self._btn_stop)
         root.addLayout(hdr)
 
-        # Список стратегий
-        self._list = QListWidget()
-        self._list.setSpacing(2)
-        self._list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-        self._list.itemClicked.connect(self._on_item_clicked)
-        self._populate_list()
-        root.addWidget(self._list, stretch=1)
-
-        # ── Блок авто-теста ────────────────────────────────────────────────
-        test_card = QFrame()
-        test_card.setObjectName("Card")
-        test_lay = QVBoxLayout(test_card)
-        test_lay.setContentsMargins(16, 14, 16, 14)
-        test_lay.setSpacing(10)
-
-        test_title = QLabel("АВТО-ТЕСТ")
-        test_title.setObjectName("SectionTitle")
-        test_lay.addWidget(test_title)
-
-        # Чипы доменов
-        chip_lbl = QLabel("Тестовые домены:")
-        chip_lbl.setStyleSheet("color: #8e8e93; font-size: 12px;")
-        test_lay.addWidget(chip_lbl)
-
-        chips_row = QHBoxLayout()
-        chips_row.setSpacing(8)
-        self._domain_chips: dict[str, QCheckBox] = {}
-        for domain in _TEST_DOMAINS:
-            chk = QCheckBox(domain)
-            chk.setChecked(domain in self._selected_test_domains)
-            chk.toggled.connect(lambda checked, d=domain: self._on_domain_chip(d, checked))
-            chips_row.addWidget(chk)
-        chips_row.addStretch()
-        test_lay.addLayout(chips_row)
-
-        # Прогресс-бар
+        # ── Прогресс ───────────────────────────────────────────────────────
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, len(strats.ALL_STRATEGIES))
         self._progress_bar.setValue(0)
-        self._progress_bar.setFixedHeight(8)
-        self._progress_bar.setTextVisible(False)
-        test_lay.addWidget(self._progress_bar)
+        self._progress_bar.setVisible(False)
+        root.addWidget(self._progress_bar)
 
-        self._progress_label = QLabel("Готов к тестированию")
-        self._progress_label.setStyleSheet("color: #8e8e93; font-size: 12px;")
-        test_lay.addWidget(self._progress_label)
+        self._progress_lbl = QLabel("")
+        self._progress_lbl.setObjectName("StatKey")
+        self._progress_lbl.setVisible(False)
+        root.addWidget(self._progress_lbl)
 
-        # Кнопки
-        btn_row = QHBoxLayout()
-        self._btn_test = QPushButton("⚡ Запустить тест всех 20 стратегий")
-        self._btn_test.clicked.connect(self.start_auto_test)
-        btn_row.addWidget(self._btn_test)
+        # ── Разделитель: список + детали ──────────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(1)
+        splitter.setStyleSheet("QSplitter::handle { background: #2e2e35; }")
 
-        self._btn_cancel = QPushButton("Отмена")
-        self._btn_cancel.setObjectName("Secondary")
-        self._btn_cancel.clicked.connect(self._tester.cancel)
-        self._btn_cancel.setEnabled(False)
-        btn_row.addWidget(self._btn_cancel)
-        btn_row.addStretch()
-        test_lay.addLayout(btn_row)
+        # Список стратегий
+        list_card = _card()
+        list_lay = QVBoxLayout(list_card)
+        list_lay.setContentsMargins(0, 0, 0, 0)
 
-        root.addWidget(test_card)
+        self._list = QListWidget()
+        self._list.setSpacing(1)
+        self._list.currentItemChanged.connect(self._on_item_changed)
+        self._list.itemDoubleClicked.connect(self._on_double_click)
+        list_lay.addWidget(self._list)
+        splitter.addWidget(list_card)
+
+        # Панель деталей
+        detail_card = _card()
+        self._detail_lay = QVBoxLayout(detail_card)
+        self._detail_lay.setContentsMargins(24, 24, 24, 24)
+        self._detail_lay.setSpacing(16)
+        self._build_detail_empty()
+        splitter.addWidget(detail_card)
+
+        splitter.setSizes([380, 300])
+        root.addWidget(splitter, stretch=1)
+
+        self._populate_list()
+
+    def _build_detail_empty(self) -> None:
+        lbl = QLabel("Выберите стратегию\nиз списка слева")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet("color: #71717a; font-size: 14px;")
+        self._detail_lay.addStretch()
+        self._detail_lay.addWidget(lbl, alignment=Qt.AlignmentFlag.AlignCenter)
+        self._detail_lay.addStretch()
 
     def _populate_list(self) -> None:
         self._list.clear()
-        self._items.clear()
-        self._list_items.clear()
+        current = cfg.get("current_strategy", "")
+        scores = cfg.get("tested_strategies", {})
 
         for group, members in strats.STRATEGY_GROUPS.items():
             # Заголовок группы
-            grp_item = QListWidgetItem(group)
-            grp_item.setFlags(Qt.ItemFlag.NoItemFlags)
-            grp_item.setForeground(Qt.GlobalColor.gray)
-            font = grp_item.font()
-            font.setBold(True)
+            hdr = QListWidgetItem(f"  {group}")
+            hdr.setFlags(Qt.ItemFlag.NoItemFlags)
+            hdr.setForeground(QColor("#71717a"))
+            font = hdr.font()
             font.setPointSize(10)
-            grp_item.setFont(font)
-            self._list.addItem(grp_item)
+            font.setBold(True)
+            hdr.setFont(font)
+            hdr.setSizeHint(QSize(0, 32))
+            self._list.addItem(hdr)
 
             for name in members:
-                status = self._get_status(name)
-                widget = _StrategyItem(name, status)
-                item = QListWidgetItem()
-                item.setSizeHint(QSize(0, 44))
+                item = QListWidgetItem(f"    {name}")
                 item.setData(Qt.ItemDataRole.UserRole, name)
+                item.setSizeHint(QSize(0, 42))
+                if name == current:
+                    item.setForeground(QColor("#6366f1"))
                 self._list.addItem(item)
-                self._list.setItemWidget(item, widget)
-                self._items[name] = widget
-                self._list_items[name] = item
 
-    def _get_status(self, name: str) -> str | None:
-        tested = cfg.get("tested_strategies", {})
-        return tested.get(name, {}).get("status")
+    def _on_item_changed(self, item: QListWidgetItem | None) -> None:
+        if not item:
+            return
+        name = item.data(Qt.ItemDataRole.UserRole)
+        if not name:
+            return
+        self._show_detail(name)
 
-    def _load_tested_results(self) -> None:
-        tested = cfg.get("tested_strategies", {})
-        for name, data in tested.items():
-            if name in self._items:
-                self._items[name].set_status(data.get("status"))
+    def _on_double_click(self, item: QListWidgetItem) -> None:
+        name = item.data(Qt.ItemDataRole.UserRole)
+        if name:
+            self._apply_strategy(name)
 
-    def _update_active_label(self) -> None:
-        current = cfg.get("current_strategy", "—")
-        self._lbl_active.setText(f"Активна: {current}")
+    def _show_detail(self, name: str) -> None:
+        while self._detail_lay.count():
+            w = self._detail_lay.takeAt(0)
+            if w.widget():
+                w.widget().deleteLater()
 
-    # ── Слоты тестирования ────────────────────────────────────────────────
+        scores = cfg.get("tested_strategies", {})
+        result = scores.get(name, {})
+
+        # Название
+        lbl_name = QLabel(name)
+        lbl_name.setStyleSheet("font-size: 16px; font-weight: 700;")
+        self._detail_lay.addWidget(lbl_name)
+
+        # Группа
+        group = strats.get_group(name)
+        lbl_group = QLabel(f"Группа: {group}")
+        lbl_group.setObjectName("StatKey")
+        self._detail_lay.addWidget(lbl_group)
+
+        # Результат теста
+        if result:
+            score = result.get("score", 0)
+            works = result.get("works", 0)
+            total = result.get("total", 0)
+            badge = QLabel()
+            if score >= 0.7:
+                badge.setText("✓  Работает")
+                badge.setObjectName("BadgeWorks")
+            elif score >= 0.3:
+                badge.setText("~  Частично")
+                badge.setObjectName("BadgePartial")
+            else:
+                badge.setText("✕  Не работает")
+                badge.setObjectName("BadgeFails")
+            self._detail_lay.addWidget(badge)
+
+            stat = QLabel(f"Доменов: {works}/{total}")
+            stat.setObjectName("StatKey")
+            self._detail_lay.addWidget(stat)
+        else:
+            badge = QLabel("  Не протестировано")
+            badge.setObjectName("BadgeNone")
+            self._detail_lay.addWidget(badge)
+
+        self._detail_lay.addStretch()
+
+        # Кнопки
+        btn_apply = QPushButton("  ▶  Запустить стратегию")
+        btn_apply.clicked.connect(lambda: self._apply_strategy(name))
+        self._detail_lay.addWidget(btn_apply)
+
+        btn_select = QPushButton("  ✓  Выбрать (без запуска)")
+        btn_select.setObjectName("Secondary")
+        btn_select.clicked.connect(lambda: self._select_strategy(name))
+        self._detail_lay.addWidget(btn_select)
+
+    def _apply_strategy(self, name: str) -> None:
+        cfg.set("current_strategy", name)
+        hostlist = cfg.get("hostlist_path", "lists/hostlist.txt")
+        self._runner.start(name, hostlist)
+        self._populate_list()
+
+    def _select_strategy(self, name: str) -> None:
+        cfg.set("current_strategy", name)
+        self._populate_list()
 
     def start_auto_test(self) -> None:
         if self._tester.is_running():
             return
-        domains = list(self._selected_test_domains) or ["discord.com", "youtube.com"]
-        self._btn_test.setEnabled(False)
-        self._btn_cancel.setEnabled(True)
+        domains = list(self._selected_test_domains) or _TEST_DOMAINS
+        self._btn_test.setVisible(False)
+        self._btn_stop.setVisible(True)
         self._progress_bar.setValue(0)
-        self._progress_label.setText("Запуск теста…")
+        self._progress_bar.setVisible(True)
+        self._progress_lbl.setVisible(True)
+        self._progress_lbl.setText("Тестирование...")
         self._tester.run_async(strats.ALL_STRATEGIES, domains)
 
-    def on_test_progress(self, current: int, total: int, name: str) -> None:
-        self._progress_bar.setValue(current)
-        self._progress_label.setText(f"[{current}/{total}] Тест: {name}")
+    def _stop_test(self) -> None:
+        self._tester.cancel()
+        self._reset_test_ui()
 
-    def on_strategy_done(self, name: str, score: int, total: int) -> None:
-        tested = cfg.get("tested_strategies", {})
-        status = tested.get(name, {}).get("status")
-        if name in self._items:
-            self._items[name].set_status(status)
+    def _reset_test_ui(self) -> None:
+        self._btn_test.setVisible(True)
+        self._btn_stop.setVisible(False)
+        self._progress_bar.setVisible(False)
+        self._progress_lbl.setVisible(False)
+
+    # ── Слоты от tester ───────────────────────────────────────────────────
+
+    def on_test_progress(self, current: int, total: int) -> None:
+        self._progress_bar.setMaximum(total)
+        self._progress_bar.setValue(current)
+        self._progress_lbl.setText(f"Протестировано: {current} / {total}")
+
+    def on_strategy_done(self, name: str, score: float, details: dict) -> None:
+        scores = cfg.get("tested_strategies", {})
+        scores[name] = details
+        cfg.set("tested_strategies", scores)
 
     def on_test_finished(self, best: str, scores: dict) -> None:
-        self._btn_test.setEnabled(True)
-        self._btn_cancel.setEnabled(False)
-        self._progress_bar.setValue(self._progress_bar.maximum())
-        self._progress_label.setText(f"Тест завершён. Лучшая: {best}")
-        self._load_tested_results()
-        self._update_active_label()
-        log.info("Авто-тест завершён. Лучшая стратегия: %s", best)
-
-    # ── Слоты взаимодействия ──────────────────────────────────────────────
-
-    def _on_item_clicked(self, item: QListWidgetItem) -> None:
-        name = item.data(Qt.ItemDataRole.UserRole)
-        if not name:
-            return
-        log.info("Выбрана стратегия: %s", name)
-        cfg.set("current_strategy", name)
-        self._update_active_label()
-        if self._runner.is_running():
-            hostlist = cfg.get("hostlist_path", "lists/hostlist.txt")
-            self._runner.start(name, hostlist)
-
-    def _on_domain_chip(self, domain: str, checked: bool) -> None:
-        if checked:
-            self._selected_test_domains.add(domain)
+        cfg.set("tested_strategies", scores)
+        if best:
+            cfg.set("current_strategy", best)
+            self._progress_lbl.setText(f"✓  Лучшая стратегия: {best}")
         else:
-            self._selected_test_domains.discard(domain)
-        cfg.set("test_domains", list(self._selected_test_domains))
-
-    def export_strategy(self, strategy_name: str) -> None:
-        """Экспортирует стратегию в .bat файл или bundle."""
-        # Диалог выбора типа экспорта
-        reply = QMessageBox.question(
-            self,
-            "Экспорт стратегии",
-            f"Экспортировать стратегию '{strategy_name}'?\n\n"
-            "• Только .bat — один файл для запуска\n"
-            "• Полный bundle — папка с winws.exe, hostlist.txt и .bat файлами\n\n"
-            "Выберите тип экспорта:",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
-        )
-
-        if reply == QMessageBox.StandardButton.Cancel:
-            return
-
-        is_bundle = reply == QMessageBox.StandardButton.No  # No = bundle
-
-        try:
-            if is_bundle:
-                # Экспорт bundle
-                output_dir = QFileDialog.getExistingDirectory(
-                    self,
-                    "Выберите папку для bundle",
-                    "",
-                    QFileDialog.Option.ShowDirsOnly
-                )
-
-                if not output_dir:
-                    return
-
-                bundle_path = export_bundle(strategy_name, output_dir)
-
-                # Диалог с кнопкой "Открыть папку"
-                msg = QMessageBox(self)
-                msg.setIcon(QMessageBox.Icon.Information)
-                msg.setWindowTitle("Экспорт завершён")
-                msg.setText(f"Bundle создан успешно!")
-                msg.setInformativeText(f"Путь: {bundle_path}")
-                open_btn = msg.addButton("Открыть папку", QMessageBox.ButtonRole.AcceptRole)
-                msg.addButton(QMessageBox.StandardButton.Ok)
-                msg.exec()
-
-                if msg.clickedButton() == open_btn:
-                    # Открываем папку в проводнике
-                    if os.name == 'nt':  # Windows
-                        os.startfile(bundle_path)
-                    elif os.name == 'posix':  # macOS/Linux
-                        os.system(f'open "{bundle_path}"' if os.uname().sysname == 'Darwin' else f'xdg-open "{bundle_path}"')
-
-            else:
-                # Экспорт только .bat
-                output_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "Сохранить .bat файл",
-                    f"{strategy_name}.bat",
-                    "Batch файлы (*.bat)"
-                )
-
-                if not output_path:
-                    return
-
-                hostlist_path = cfg.get("hostlist_path", "lists/hostlist.txt")
-                export_to_bat(strategy_name, hostlist_path, output_path)
-
-                QMessageBox.information(
-                    self,
-                    "Экспорт завершён",
-                    f"Файл сохранён:\n{output_path}\n\n"
-                    "Не забудьте поместить winws.exe и hostlist.txt\n"
-                    "в ту же папку, что и .bat файл!"
-                )
-
-            log.info("Экспортирована стратегия: %s", strategy_name)
-
-        except Exception as e:
-            log.error("Ошибка экспорта: %s", e)
-            QMessageBox.critical(
-                self,
-                "Ошибка экспорта",
-                f"Не удалось экспортировать стратегию:\n{e}"
-            )
+            self._progress_lbl.setText("Тест завершён — рабочих стратегий не найдено")
+        self._btn_test.setVisible(True)
+        self._btn_stop.setVisible(False)
+        self._progress_bar.setVisible(False)
+        self._populate_list()

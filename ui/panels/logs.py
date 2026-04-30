@@ -1,17 +1,16 @@
-"""Панель «Логи» — вывод stdout winws.exe в реальном времени."""
+"""Панель «Логи»."""
 import logging
 from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QPlainTextEdit, QFileDialog,
+    QPushButton, QPlainTextEdit, QFileDialog, QFrame,
 )
-from PyQt6.QtGui import QFont, QTextCursor
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QTextCursor
 
 log = logging.getLogger(__name__)
-
 MAX_LINES = 2000
 
 
@@ -23,67 +22,54 @@ class LogsPanel(QWidget):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 32, 32, 32)
-        root.setSpacing(12)
+        root.setSpacing(16)
 
-        # Заголовок + кнопки
+        # ── Заголовок ──────────────────────────────────────────────────────
         hdr = QHBoxLayout()
         title = QLabel("Логи")
-        title.setStyleSheet("font-size: 22px; font-weight: 700;")
+        title.setObjectName("PageTitle")
         hdr.addWidget(title)
         hdr.addStretch()
 
-        btn_clear = QPushButton("🗑 Очистить")
-        btn_clear.setObjectName("Secondary")
+        btn_clear = QPushButton("  ✕  Очистить")
+        btn_clear.setObjectName("Ghost")
         btn_clear.clicked.connect(self._clear)
-        hdr.addWidget(btn_clear)
 
-        btn_save = QPushButton("💾 Сохранить")
+        btn_save = QPushButton("  ↓  Сохранить")
         btn_save.setObjectName("Secondary")
         btn_save.clicked.connect(self._save)
-        hdr.addWidget(btn_save)
 
+        hdr.addWidget(btn_clear)
+        hdr.addWidget(btn_save)
         root.addLayout(hdr)
 
-        # Текстовое поле
-        self._text = QPlainTextEdit()
-        self._text.setReadOnly(True)
-        mono_font = QFont("Consolas", 11)
-        mono_font.setStyleHint(QFont.StyleHint.Monospace)
-        self._text.setFont(mono_font)
-        self._text.setMaximumBlockCount(MAX_LINES)
-        root.addWidget(self._text, stretch=1)
+        # ── Вывод ──────────────────────────────────────────────────────────
+        self._out = QPlainTextEdit()
+        self._out.setObjectName("LogOutput")
+        self._out.setReadOnly(True)
+        self._out.setMaximumBlockCount(MAX_LINES)
+        root.addWidget(self._out, stretch=1)
 
-        # Статус-строка
-        self._status = QLabel("Ожидание логов…")
-        self._status.setStyleSheet("color: #8e8e93; font-size: 11px;")
+        # ── Статус-строка ──────────────────────────────────────────────────
+        self._status = QLabel("Ожидание...")
+        self._status.setObjectName("StatKey")
         root.addWidget(self._status)
 
-    def append_line(self, line: str) -> None:
+    def append_line(self, text: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
-        self._text.appendPlainText(f"[{ts}] {line}")
-        # Авто-скролл вниз
-        cursor = self._text.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self._text.setTextCursor(cursor)
-        count = self._text.blockCount()
-        self._status.setText(f"Строк: {count}")
+        self._out.appendPlainText(f"[{ts}]  {text}")
+        self._out.moveCursor(QTextCursor.MoveOperation.End)
+        lines = self._out.blockCount()
+        self._status.setText(f"{lines} строк")
 
     def _clear(self) -> None:
-        self._text.clear()
-        self._status.setText("Лог очищен")
+        self._out.clear()
+        self._status.setText("Очищено")
 
     def _save(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Сохранить лог",
-            str(Path.home() / "zapret_log.txt"),
-            "Текстовый файл (*.txt)",
+            self, "Сохранить лог", "zapret_log.txt", "Text files (*.txt)"
         )
         if path:
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(self._text.toPlainText())
-                self._status.setText(f"Сохранено: {path}")
-                log.info("Лог сохранён: %s", path)
-            except Exception as e:
-                log.error("Ошибка сохранения лога: %s", e)
+            Path(path).write_text(self._out.toPlainText(), encoding="utf-8")
+            self._status.setText(f"Сохранено: {path}")

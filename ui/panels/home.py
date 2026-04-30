@@ -1,10 +1,10 @@
-"""Панель «Главная» — кнопка-тоггл и статус-строки."""
+"""Панель «Главная»."""
 import logging
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QSizePolicy,
+    QPushButton, QFrame, QGridLayout,
 )
 from PyQt6.QtCore import Qt
 
@@ -14,31 +14,28 @@ import core.domains as domains_mod
 log = logging.getLogger(__name__)
 
 
-def _make_card() -> QFrame:
-    card = QFrame()
-    card.setObjectName("Card")
-    return card
+def _card(parent=None) -> QFrame:
+    f = QFrame(parent)
+    f.setObjectName("Card")
+    return f
 
 
-class _InfoRow(QWidget):
-    """Строка: лейбл + значение."""
+def _stat_card(key: str, value: str, parent=None) -> tuple[QFrame, QLabel]:
+    card = _card(parent)
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(20, 16, 20, 16)
+    lay.setSpacing(6)
 
-    def __init__(self, label: str, parent=None):
-        super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 4, 0, 4)
-        self._lbl = QLabel(label)
-        self._lbl.setStyleSheet("color: #8e8e93; min-width: 160px;")
-        self._val = QLabel("—")
-        self._val.setObjectName("StatusOk")
-        lay.addWidget(self._lbl)
-        lay.addWidget(self._val, stretch=1)
+    lbl_key = QLabel(key)
+    lbl_key.setObjectName("StatKey")
 
-    def set_value(self, text: str, ok: bool = True) -> None:
-        self._val.setText(text)
-        self._val.setObjectName("StatusOk" if ok else "StatusErr")
-        self._val.style().unpolish(self._val)
-        self._val.style().polish(self._val)
+    lbl_val = QLabel(value)
+    lbl_val.setObjectName("StatVal")
+    lbl_val.setWordWrap(True)
+
+    lay.addWidget(lbl_key)
+    lay.addWidget(lbl_val)
+    return card, lbl_val
 
 
 class HomePanel(QWidget):
@@ -51,130 +48,151 @@ class HomePanel(QWidget):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 32, 32, 32)
-        root.setSpacing(24)
+        root.setSpacing(20)
 
         # ── Заголовок ──────────────────────────────────────────────────────
+        hdr = QHBoxLayout()
         title = QLabel("Главная")
-        title.setStyleSheet("font-size: 22px; font-weight: 700;")
-        root.addWidget(title)
+        title.setObjectName("PageTitle")
+        hdr.addWidget(title)
+        hdr.addStretch()
+        root.addLayout(hdr)
 
-        # ── Кнопка-тоггл + подпись ─────────────────────────────────────────
-        toggle_wrap = QHBoxLayout()
-        toggle_wrap.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # ── Карточка управления ────────────────────────────────────────────
+        ctrl_card = _card()
+        ctrl_lay = QVBoxLayout(ctrl_card)
+        ctrl_lay.setContentsMargins(32, 28, 32, 28)
+        ctrl_lay.setSpacing(16)
+        ctrl_lay.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        toggle_col = QVBoxLayout()
-        toggle_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        toggle_col.setSpacing(8)
+        self._power_btn = QPushButton("⏻")
+        self._power_btn.setObjectName("PowerBtn")
+        self._power_btn.setProperty("active", "false")
+        self._power_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._power_btn.setToolTip("Запустить / Остановить")
+        self._power_btn.clicked.connect(self._toggle)
 
-        self._toggle_btn = QPushButton("▶")
-        self._toggle_btn.setObjectName("ToggleBtn")
-        self._toggle_btn.setProperty("running", "false")
-        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._toggle_btn.clicked.connect(self._on_toggle)
-        toggle_col.addWidget(self._toggle_btn)
+        self._status_lbl = QLabel("Остановлен")
+        self._status_lbl.setObjectName("StatusOff")
+        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        self._toggle_label = QLabel("Нажмите для запуска")
-        self._toggle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._toggle_label.setStyleSheet("color: #8e8e93; font-size: 12px;")
-        toggle_col.addWidget(self._toggle_label)
+        self._strategy_lbl = QLabel("Стратегия не выбрана")
+        self._strategy_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._strategy_lbl.setStyleSheet("color: #71717a; font-size: 12px;")
 
-        toggle_wrap.addLayout(toggle_col)
-        toggle_wrap.addSpacing(32)
+        ctrl_lay.addWidget(self._power_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        ctrl_lay.addWidget(self._status_lbl)
+        ctrl_lay.addWidget(self._strategy_lbl)
 
-        # ── Карточка статуса ────────────────────────────────────────────────
-        card = _make_card()
-        card_lay = QVBoxLayout(card)
-        card_lay.setContentsMargins(20, 16, 20, 16)
-        card_lay.setSpacing(2)
+        root.addWidget(ctrl_card)
 
-        self._row_strategy = _InfoRow("Стратегия:")
-        self._row_domains  = _InfoRow("Доменов в hostlist:")
-        self._row_process  = _InfoRow("Процесс winws:")
-        self._row_autorun  = _InfoRow("Автозапуск:")
+        # ── Стат-карточки ──────────────────────────────────────────────────
+        grid = QGridLayout()
+        grid.setSpacing(12)
 
-        for row in (self._row_strategy, self._row_domains,
-                    self._row_process, self._row_autorun):
-            card_lay.addWidget(row)
+        strategy = cfg.get("current_strategy", "—")
+        self._card_strategy, self._val_strategy = _stat_card("Текущая стратегия", strategy or "—")
 
-        toggle_wrap.addWidget(card, stretch=1)
-        root.addLayout(toggle_wrap)
+        hostlist = cfg.get("hostlist_path", "lists/hostlist.txt")
+        count = self._count_domains(hostlist)
+        self._card_domains, self._val_domains = _stat_card("Доменов в hostlist", str(count))
 
-        # ── Кнопки быстрых действий ─────────────────────────────────────────
-        actions = QHBoxLayout()
-        actions.setSpacing(12)
+        autostart = "Включён" if cfg.get("autostart", False) else "Выключен"
+        self._card_autostart, self._val_autostart = _stat_card("Автозапуск", autostart)
 
-        self._btn_rebuild = QPushButton("🔄 Пересобрать домены")
-        self._btn_rebuild.setObjectName("Secondary")
-        self._btn_rebuild.clicked.connect(self._rebuild_domains)
-        actions.addWidget(self._btn_rebuild)
+        recovery = "Включён" if cfg.get("auto_recovery_enabled", False) else "Выключен"
+        self._card_recovery, self._val_recovery = _stat_card("Авто-восстановление", recovery)
 
-        self._btn_autotest = QPushButton("⚡ Авто-тест стратегий")
-        self._btn_autotest.setObjectName("Secondary")
-        self._btn_autotest.clicked.connect(self._run_autotest)
-        actions.addWidget(self._btn_autotest)
+        grid.addWidget(self._card_strategy,  0, 0)
+        grid.addWidget(self._card_domains,   0, 1)
+        grid.addWidget(self._card_autostart, 1, 0)
+        grid.addWidget(self._card_recovery,  1, 1)
 
-        actions.addStretch()
-        root.addLayout(actions)
+        root.addLayout(grid)
+
+        # ── Кнопки действий ───────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+
+        btn_rebuild = QPushButton("  ◎  Пересобрать домены")
+        btn_rebuild.setObjectName("Secondary")
+        btn_rebuild.clicked.connect(self._rebuild_domains)
+
+        btn_test = QPushButton("  ⚡  Авто-тест стратегий")
+        btn_test.setObjectName("Secondary")
+        btn_test.clicked.connect(self._start_test)
+
+        btn_row.addWidget(btn_rebuild)
+        btn_row.addWidget(btn_test)
+        btn_row.addStretch()
+        root.addLayout(btn_row)
+
         root.addStretch()
 
-        self._refresh_info()
+        self._refresh_strategy_label()
 
-    # ── Обновление UI ─────────────────────────────────────────────────────
+    # ── Вспомогательные ───────────────────────────────────────────────────
 
-    def _refresh_info(self) -> None:
-        strategy = cfg.get("current_strategy", "—")
-        self._row_strategy.set_value(strategy)
+    def _count_domains(self, path: str) -> int:
+        p = Path(path) if path else Path("lists/hostlist.txt")
+        if not p.exists():
+            return 0
+        return sum(1 for l in p.read_text(encoding="utf-8").splitlines() if l.strip())
 
-        hostlist = Path(cfg.get("hostlist_path", "lists/hostlist.txt"))
-        count = 0
-        if hostlist.exists():
-            count = sum(1 for l in hostlist.read_text(encoding="utf-8").splitlines() if l.strip())
-        self._row_domains.set_value(str(count), ok=count > 0)
+    def _refresh_strategy_label(self) -> None:
+        s = cfg.get("current_strategy", "")
+        self._strategy_lbl.setText(f"Стратегия: {s}" if s else "Стратегия не выбрана")
+        self._val_strategy.setText(s or "—")
 
-        running = self._runner.is_running()
-        self._row_process.set_value(
-            "● Работает" if running else "○ Остановлен", ok=running
-        )
+    # ── Слоты ─────────────────────────────────────────────────────────────
 
-        try:
-            from core.autostart import is_enabled
-            ar = is_enabled()
-        except Exception:
-            ar = cfg.get("autostart", False)
-        self._row_autorun.set_value("Включён" if ar else "Выключен", ok=ar)
-
-    def on_status_changed(self, running: bool) -> None:
-        self._toggle_btn.setProperty("running", "true" if running else "false")
-        self._toggle_btn.style().unpolish(self._toggle_btn)
-        self._toggle_btn.style().polish(self._toggle_btn)
-        self._toggle_btn.setText("⏹" if running else "▶")
-        self._toggle_label.setText("Нажмите для остановки" if running else "Нажмите для запуска")
-        self._refresh_info()
-
-    # ── Действия ──────────────────────────────────────────────────────────
-
-    def _on_toggle(self) -> None:
+    def _toggle(self) -> None:
         if self._runner.is_running():
             self._runner.stop()
         else:
-            strategy = cfg.get("current_strategy", "ALT")
+            strategy = cfg.get("current_strategy", "")
+            if not strategy:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.information(self, "Zapret UI",
+                    "Выберите стратегию во вкладке «Стратегии» перед запуском.")
+                return
             hostlist = cfg.get("hostlist_path", "lists/hostlist.txt")
             self._runner.start(strategy, hostlist)
-        self._refresh_info()
 
     def _rebuild_domains(self) -> None:
         groups = cfg.get("enabled_groups", [])
         try:
-            out = domains_mod.build_hostlist(groups, cfg.get("hostlist_path"))
-            log.info("Домены пересобраны: %s", out)
-            self._refresh_info()
+            domains_mod.build_hostlist(groups, cfg.get("hostlist_path"))
+            count = self._count_domains(cfg.get("hostlist_path", "lists/hostlist.txt"))
+            self._val_domains.setText(str(count))
         except Exception as e:
-            log.error("Ошибка сборки доменов: %s", e)
+            log.error("Rebuild failed: %s", e)
 
-    def _run_autotest(self) -> None:
-        # Переключаем на панель стратегий и запускаем тест
-        main_win = self.window()
-        if hasattr(main_win, "_navigate"):
-            main_win._navigate("strategies")
-        if hasattr(main_win, "trigger_auto_test"):
-            main_win.trigger_auto_test()
+    def _start_test(self) -> None:
+        parent = self.parent()
+        while parent and not hasattr(parent, "trigger_auto_test"):
+            parent = parent.parent()
+        if parent:
+            parent.trigger_auto_test()
+
+    def on_status_changed(self, running: bool) -> None:
+        self._power_btn.setProperty("active", "true" if running else "false")
+        self._power_btn.style().unpolish(self._power_btn)
+        self._power_btn.style().polish(self._power_btn)
+
+        if running:
+            self._status_lbl.setText("Активно")
+            self._status_lbl.setObjectName("StatusOn")
+        else:
+            self._status_lbl.setText("Остановлен")
+            self._status_lbl.setObjectName("StatusOff")
+        self._status_lbl.style().unpolish(self._status_lbl)
+        self._status_lbl.style().polish(self._status_lbl)
+
+        self._refresh_strategy_label()
+        count = self._count_domains(cfg.get("hostlist_path", "lists/hostlist.txt"))
+        self._val_domains.setText(str(count))
+        autostart = "Включён" if cfg.get("autostart", False) else "Выключен"
+        self._val_autostart.setText(autostart)
+        recovery = "Включён" if cfg.get("auto_recovery_enabled", False) else "Выключен"
+        self._val_recovery.setText(recovery)

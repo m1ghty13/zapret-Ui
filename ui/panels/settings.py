@@ -3,130 +3,41 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QLineEdit, QPushButton, QFrame, QFileDialog, QScrollArea,
-    QComboBox, QColorDialog, QApplication,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QLineEdit, QCheckBox, QComboBox,
+    QFrame, QScrollArea, QFileDialog, QSpinBox,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 
 import core.config as cfg
+from core.autostart import set_autostart, is_autostart_enabled
 
 log = logging.getLogger(__name__)
 
 
-def _section(title: str) -> QLabel:
-    lbl = QLabel(title.upper())
-    lbl.setObjectName("SectionTitle")
-    return lbl
+def _card(title: str, parent=None) -> tuple[QFrame, QVBoxLayout]:
+    card = QFrame(parent)
+    card.setObjectName("Card")
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(24, 20, 24, 20)
+    lay.setSpacing(16)
 
-
-def _separator() -> QFrame:
-    sep = QFrame()
-    sep.setFrameShape(QFrame.Shape.HLine)
-    return sep
-
-
-class _ToggleRow(QWidget):
-    """Строка: описание + QCheckBox."""
-
-    def __init__(self, label: str, description: str, config_key: str, parent=None):
-        super().__init__(parent)
-        self._key = config_key
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 6, 0, 6)
-
-        text_col = QVBoxLayout()
-        lbl = QLabel(label)
-        lbl.setStyleSheet("font-size: 13px; font-weight: 500;")
-        text_col.addWidget(lbl)
-        desc = QLabel(description)
-        desc.setStyleSheet("color: #8e8e93; font-size: 11px;")
-        text_col.addWidget(desc)
-        lay.addLayout(text_col, stretch=1)
-
-        self._chk = QCheckBox()
-        self._chk.setChecked(bool(cfg.get(config_key, False)))
-        self._chk.toggled.connect(self._save)
-        lay.addWidget(self._chk)
-
-    def _save(self, checked: bool) -> None:
-        cfg.set(self._key, checked)
-        if self._key == "autostart":
-            try:
-                from core.autostart import enable, disable
-                if checked:
-                    enable()
-                else:
-                    disable()
-            except Exception as e:
-                log.warning("Автозапуск: %s", e)
-        elif self._key == "ping_monitor_enabled":
-            # Управляем ping monitor через трей
-            self._notify_ping_monitor_changed(checked)
-        elif self._key == "auto_recovery_enabled":
-            # Управляем auto-recovery через главное окно
-            self._notify_auto_recovery_changed(checked)
-
-    def _notify_ping_monitor_changed(self, enabled: bool) -> None:
-        """Уведомляет трей об изменении настройки ping monitor."""
-        # Получаем главное окно
-        window = self.window()
-        if window and hasattr(window, '_tray_icon'):
-            tray = window._tray_icon
-            if tray and hasattr(tray, '_ping_monitor'):
-                if enabled:
-                    tray._ping_monitor.start()
-                else:
-                    tray._ping_monitor.stop()
-
-    def _notify_auto_recovery_changed(self, enabled: bool) -> None:
-        """Уведомляет главное окно об изменении настройки auto-recovery."""
-        window = self.window()
-        if window and hasattr(window, 'auto_recovery'):
-            if enabled:
-                window.auto_recovery.start()
-            else:
-                window.auto_recovery.stop()
-
-
-class _PathRow(QWidget):
-    """Строка: метка + поле пути + кнопка обзора."""
-
-    def __init__(self, label: str, config_key: str,
-                 file_filter: str = "Все файлы (*)", parent=None):
-        super().__init__(parent)
-        self._key = config_key
-        self._filter = file_filter
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 4, 0, 4)
-        lay.setSpacing(4)
-
-        lbl = QLabel(label)
-        lbl.setStyleSheet("font-size: 13px; font-weight: 500;")
+    if title:
+        lbl = QLabel(title.upper())
+        lbl.setObjectName("SectionLabel")
         lay.addWidget(lbl)
 
-        row = QHBoxLayout()
-        self._edit = QLineEdit(str(cfg.get(config_key, "")))
-        self._edit.editingFinished.connect(self._save)
-        row.addWidget(self._edit, stretch=1)
+    return card, lay
 
-        btn = QPushButton("…")
-        btn.setFixedWidth(36)
-        btn.setObjectName("Secondary")
-        btn.clicked.connect(self._browse)
-        row.addWidget(btn)
-        lay.addLayout(row)
 
-    def _save(self) -> None:
-        cfg.set(self._key, self._edit.text())
-
-    def _browse(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Выберите файл", "", self._filter)
-        if path:
-            self._edit.setText(path)
-            self._save()
+def _row(label: str, widget: QWidget, lay: QVBoxLayout) -> None:
+    row = QHBoxLayout()
+    lbl = QLabel(label)
+    lbl.setFixedWidth(200)
+    lbl.setStyleSheet("color: #a1a1aa;")
+    row.addWidget(lbl)
+    row.addWidget(widget, stretch=1)
+    lay.addLayout(row)
 
 
 class SettingsPanel(QWidget):
@@ -135,207 +46,151 @@ class SettingsPanel(QWidget):
         self._build()
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
-        root.setContentsMargins(32, 32, 32, 32)
-        root.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(32, 32, 32, 32)
+        outer.setSpacing(0)
 
         title = QLabel("Настройки")
-        title.setStyleSheet("font-size: 22px; font-weight: 700; margin-bottom: 20px;")
-        root.addWidget(title)
+        title.setObjectName("PageTitle")
+        outer.addWidget(title)
+        outer.addSpacing(20)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         container = QWidget()
-        lay = QVBoxLayout(container)
-        lay.setContentsMargins(0, 0, 16, 0)
-        lay.setSpacing(8)
+        root = QVBoxLayout(container)
+        root.setContentsMargins(0, 0, 4, 0)
+        root.setSpacing(16)
 
-        # ── Поведение ─────────────────────────────────────────────────────
-        lay.addWidget(_section("Поведение"))
-        lay.addWidget(_ToggleRow(
-            "Автозапуск с Windows",
-            "Добавляет ZapretUI в HKCU\\...\\Run",
-            "autostart",
-        ))
-        lay.addWidget(_ToggleRow(
-            "Сворачивать в трей при закрытии",
-            "Закрытие окна скрывает приложение в трей",
-            "minimize_to_tray",
-        ))
-        lay.addWidget(_ToggleRow(
-            "Авто-тест при первом запуске",
-            "Автоматически запускает тест 20 стратегий при первом старте",
-            "auto_test_on_first_run",
-        ))
-        lay.addWidget(_ToggleRow(
-            "Показывать подсказку Secure DNS",
-            "Рекомендует включить DoH/DoT для лучшего обхода",
-            "secure_dns_hint",
-        ))
-        lay.addWidget(_ToggleRow(
-            "Мониторинг подключения в трее",
-            "Показывает индикатор статуса интернета на иконке трея (проверка каждые 5 сек)",
-            "ping_monitor_enabled",
-        ))
-        lay.addWidget(_ToggleRow(
-            "Автоматический перезапуск при падении",
-            "Перезапускает winws.exe если процесс упал (проверка каждые 3 сек)",
-            "auto_recovery_enabled",
-        ))
-        lay.addWidget(_separator())
+        # ── Запуск ─────────────────────────────────────────────────────────
+        card, lay = _card("Запуск и стратегия")
 
-        # ── Внешний вид ───────────────────────────────────────────────────
-        lay.addWidget(_section("Внешний вид"))
+        self._strategy_combo = QComboBox()
+        from core.strategies import ALL_STRATEGIES
+        self._strategy_combo.addItems(ALL_STRATEGIES)
+        current = cfg.get("current_strategy", "")
+        if current in ALL_STRATEGIES:
+            self._strategy_combo.setCurrentText(current)
+        _row("Стратегия по умолчанию", self._strategy_combo, lay)
 
-        # Выбор темы
-        theme_row = QWidget()
-        theme_lay = QHBoxLayout(theme_row)
-        theme_lay.setContentsMargins(0, 6, 0, 6)
+        self._autostart_chk = QCheckBox("Запускать вместе с Windows")
+        self._autostart_chk.setChecked(is_autostart_enabled())
+        lay.addWidget(self._autostart_chk)
 
-        theme_label = QLabel("Тема")
-        theme_label.setStyleSheet("font-size: 13px; font-weight: 500;")
-        theme_lay.addWidget(theme_label, stretch=1)
+        self._autorun_chk = QCheckBox("Автозапуск стратегии при старте")
+        self._autorun_chk.setChecked(cfg.get("autorun_on_start", False))
+        lay.addWidget(self._autorun_chk)
 
-        self._theme_combo = QComboBox()
-        self._theme_combo.addItems(["Тёмная", "Светлая", "Системная"])
-        current_theme = cfg.get("theme", "dark")
-        theme_map = {"dark": 0, "light": 1, "system": 2}
-        self._theme_combo.setCurrentIndex(theme_map.get(current_theme, 0))
-        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        theme_lay.addWidget(self._theme_combo)
+        root.addWidget(card)
 
-        lay.addWidget(theme_row)
+        # ── Пути ───────────────────────────────────────────────────────────
+        card2, lay2 = _card("Пути к файлам")
 
-        # Цвет акцента
-        accent_row = QWidget()
-        accent_lay = QHBoxLayout(accent_row)
-        accent_lay.setContentsMargins(0, 6, 0, 6)
+        self._winws_edit = QLineEdit(cfg.get("winws_path", "bin/winws.exe"))
+        row_winws = QHBoxLayout()
+        row_winws.addWidget(self._winws_edit, stretch=1)
+        btn_winws = QPushButton("…")
+        btn_winws.setObjectName("Ghost")
+        btn_winws.setFixedWidth(36)
+        btn_winws.clicked.connect(self._browse_winws)
+        row_winws.addWidget(btn_winws)
+        lbl_winws = QLabel("Путь к winws.exe")
+        lbl_winws.setFixedWidth(200)
+        lbl_winws.setStyleSheet("color: #a1a1aa;")
+        full_row = QHBoxLayout()
+        full_row.addWidget(lbl_winws)
+        full_row.addLayout(row_winws)
+        lay2.addLayout(full_row)
 
-        accent_label = QLabel("Цвет акцента")
-        accent_label.setStyleSheet("font-size: 13px; font-weight: 500;")
-        accent_lay.addWidget(accent_label, stretch=1)
+        self._hostlist_edit = QLineEdit(cfg.get("hostlist_path", "lists/hostlist.txt"))
+        row_hl = QHBoxLayout()
+        row_hl.addWidget(self._hostlist_edit, stretch=1)
+        btn_hl = QPushButton("…")
+        btn_hl.setObjectName("Ghost")
+        btn_hl.setFixedWidth(36)
+        btn_hl.clicked.connect(self._browse_hostlist)
+        row_hl.addWidget(btn_hl)
+        lbl_hl = QLabel("Путь к hostlist.txt")
+        lbl_hl.setFixedWidth(200)
+        lbl_hl.setStyleSheet("color: #a1a1aa;")
+        full_row2 = QHBoxLayout()
+        full_row2.addWidget(lbl_hl)
+        full_row2.addLayout(row_hl)
+        lay2.addLayout(full_row2)
 
-        # Превью текущего цвета
-        self._color_preview = QLabel("   ")
-        self._color_preview.setFixedSize(24, 24)
-        self._color_preview.setStyleSheet(f"background-color: {cfg.get('accent_color', '#007aff')}; border-radius: 12px; border: 1px solid #8e8e93;")
-        accent_lay.addWidget(self._color_preview)
+        root.addWidget(card2)
 
-        # Кнопка выбора цвета
-        color_btn = QPushButton("Выбрать цвет")
-        color_btn.setObjectName("Secondary")
-        color_btn.clicked.connect(self._pick_color)
-        accent_lay.addWidget(color_btn)
+        # ── Поведение ──────────────────────────────────────────────────────
+        card3, lay3 = _card("Поведение")
 
-        lay.addWidget(accent_row)
+        self._tray_chk = QCheckBox("Сворачивать в трей при закрытии")
+        self._tray_chk.setChecked(cfg.get("minimize_to_tray", True))
+        lay3.addWidget(self._tray_chk)
 
-        # Пресеты цветов
-        presets_label = QLabel("Быстрый выбор:")
-        presets_label.setStyleSheet("color: #8e8e93; font-size: 11px; margin-top: 4px;")
-        lay.addWidget(presets_label)
+        self._recovery_chk = QCheckBox("Авто-восстановление при сбое")
+        self._recovery_chk.setChecked(cfg.get("auto_recovery_enabled", False))
+        lay3.addWidget(self._recovery_chk)
 
-        presets_row = QWidget()
-        presets_lay = QHBoxLayout(presets_row)
-        presets_lay.setContentsMargins(0, 4, 0, 4)
-        presets_lay.setSpacing(8)
+        self._ping_chk = QCheckBox("Мониторинг соединения (ping)")
+        self._ping_chk.setChecked(cfg.get("ping_monitor_enabled", False))
+        lay3.addWidget(self._ping_chk)
 
-        presets = [
-            ("Синий", "#007aff"),
-            ("Красный", "#ff3b30"),
-            ("Зелёный", "#34c759"),
-            ("Фиолетовый", "#af52de"),
-            ("Оранжевый", "#ff9500"),
-        ]
+        root.addWidget(card3)
 
-        for name, color in presets:
-            btn = QPushButton(name)
-            btn.setFixedHeight(28)
-            btn.setStyleSheet(f"background-color: {color}; color: white; border-radius: 6px; padding: 4px 12px;")
-            btn.clicked.connect(lambda checked, c=color: self._apply_accent(c))
-            presets_lay.addWidget(btn)
+        # ── Кнопки ─────────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_save = QPushButton("  ✓  Сохранить настройки")
+        btn_save.clicked.connect(self._save)
+        btn_reset = QPushButton("  ↺  Сброс")
+        btn_reset.setObjectName("Ghost")
+        btn_reset.clicked.connect(self._reset)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_reset)
+        btn_row.addWidget(btn_save)
+        root.addLayout(btn_row)
 
-        presets_lay.addStretch()
-        lay.addWidget(presets_row)
-
-        lay.addWidget(_separator())
-
-        # ── Пути ──────────────────────────────────────────────────────────
-        lay.addWidget(_section("Пути к файлам"))
-        lay.addWidget(_PathRow(
-            "Путь к winws.exe",
-            "winws_path",
-            "Исполняемый файл (winws.exe)",
-        ))
-        lay.addWidget(_PathRow(
-            "Путь к hostlist.txt",
-            "hostlist_path",
-            "Текстовый файл (*.txt)",
-        ))
-        lay.addWidget(_separator())
-
-        # ── Информация ────────────────────────────────────────────────────
-        lay.addWidget(_section("О программе"))
-
-        info_card = QFrame()
-        info_card.setObjectName("Card")
-        info_lay = QVBoxLayout(info_card)
-        info_lay.setContentsMargins(16, 14, 16, 14)
-        info_lay.setSpacing(6)
-
-        for text in (
-            "Zapret UI — графический интерфейс для zapret (winws.exe)",
-            "Оригинальный zapret: github.com/bol-van/zapret",
-            "Сборка для Discord/YouTube: github.com/Flowseal/zapret-discord-youtube",
-        ):
-            lbl = QLabel(text)
-            lbl.setStyleSheet("color: #8e8e93; font-size: 12px;")
-            info_lay.addWidget(lbl)
-
-        lay.addWidget(info_card)
-        lay.addStretch()
-
+        root.addStretch()
         scroll.setWidget(container)
-        root.addWidget(scroll, stretch=1)
+        outer.addWidget(scroll, stretch=1)
 
-    def _on_theme_changed(self, index: int) -> None:
-        """Обработка изменения темы."""
-        theme_map = {0: "dark", 1: "light", 2: "system"}
-        theme = theme_map[index]
-        cfg.set("theme", theme)
+        # Статус
+        self._status = QLabel("")
+        self._status.setObjectName("StatKey")
+        outer.addWidget(self._status)
 
-        # Применяем тему мгновенно
-        self._apply_theme()
+    def _browse_winws(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Выберите winws.exe", "", "EXE (*.exe)")
+        if path:
+            self._winws_edit.setText(path)
 
-    def _pick_color(self) -> None:
-        """Открывает диалог выбора цвета."""
-        current_color = QColor(cfg.get("accent_color", "#007aff"))
-        color = QColorDialog.getColor(current_color, self, "Выберите цвет акцента")
+    def _browse_hostlist(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Выберите hostlist", "", "Text (*.txt)")
+        if path:
+            self._hostlist_edit.setText(path)
 
-        if color.isValid():
-            hex_color = color.name()
-            self._apply_accent(hex_color)
+    def _save(self) -> None:
+        strategy = self._strategy_combo.currentText()
+        cfg.set("current_strategy", strategy)
+        cfg.set("winws_path", self._winws_edit.text())
+        cfg.set("hostlist_path", self._hostlist_edit.text())
+        cfg.set("minimize_to_tray", self._tray_chk.isChecked())
+        cfg.set("auto_recovery_enabled", self._recovery_chk.isChecked())
+        cfg.set("ping_monitor_enabled", self._ping_chk.isChecked())
+        cfg.set("autorun_on_start", self._autorun_chk.isChecked())
+        try:
+            set_autostart(self._autostart_chk.isChecked())
+        except Exception as e:
+            log.warning("Autostart error: %s", e)
+        cfg.save()
+        self._status.setText("✓  Настройки сохранены")
 
-    def _apply_accent(self, hex_color: str) -> None:
-        """Применяет новый цвет акцента."""
-        cfg.set("accent_color", hex_color)
-
-        # Обновляем превью
-        self._color_preview.setStyleSheet(
-            f"background-color: {hex_color}; border-radius: 12px; border: 1px solid #8e8e93;"
-        )
-
-        # Применяем тему мгновенно
-        self._apply_theme()
-
-    def _apply_theme(self) -> None:
-        """Применяет текущую тему к приложению."""
-        from ui.theme import apply_theme
-
-        app = QApplication.instance()
-        if app:
-            theme = cfg.get("theme", "dark")
-            accent = cfg.get("accent_color", "#007aff")
-            apply_theme(app, theme, accent)
-            log.info("Тема применена: %s, акцент: %s", theme, accent)
+    def _reset(self) -> None:
+        self._winws_edit.setText("bin/winws.exe")
+        self._hostlist_edit.setText("lists/hostlist.txt")
+        self._tray_chk.setChecked(True)
+        self._recovery_chk.setChecked(False)
+        self._ping_chk.setChecked(False)
+        self._autorun_chk.setChecked(False)
+        self._status.setText("Сброшено к значениям по умолчанию")
