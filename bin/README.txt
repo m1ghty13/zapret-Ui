@@ -1,7 +1,7 @@
-Place zapret binaries here before running the app:
+Zapret binaries go here (downloaded automatically by build_windows.bat):
 
   winws.exe
   WinDivert.dll
   WinDivert64.sys
 
-Download them from: https://github.com/bol-van/zapret/releases
+Source: https://github.com/bol-van/zapret/releases
