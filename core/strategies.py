@@ -51,3 +51,8 @@ def get_group(name: str) -> str:
         if name in members:
             return group
     return "General"
+
+
+def list_strategies() -> list[str]:
+    """Возвращает список всех доступных стратегий."""
+    return ALL_STRATEGIES
