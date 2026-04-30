@@ -47,6 +47,7 @@ class WinwsRunner(QObject):
         self._process: subprocess.Popen | None = None
         self._reader: _StdoutReader | None = None
         self._current_strategy: str = ""
+        self._hostlist_path: str = ""
 
     # ── Публичный API ──────────────────────────────────────────────────────
 
@@ -64,6 +65,9 @@ class WinwsRunner(QObject):
         if not args:
             self.log_line.emit(f"❌ Стратегия «{strategy_name}» не содержит параметров.")
             return False
+
+        self._current_strategy = strategy_name
+        self._hostlist_path = hostlist_path
 
         # Подставляем путь к hostlist если аргумент использует плейсхолдер
         args = [a.replace("{hostlist}", hostlist_path) for a in args]
@@ -94,7 +98,6 @@ class WinwsRunner(QObject):
             self.log_line.emit(f"❌ Ошибка запуска: {e}")
             return False
 
-        self._current_strategy = strategy_name
         self._reader = _StdoutReader(self._process, self)
         self._reader.line_received.connect(self.log_line)
         self._reader.start()
