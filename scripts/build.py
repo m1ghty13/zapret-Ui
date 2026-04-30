@@ -29,8 +29,10 @@ def main() -> None:
     data_folders = []
     for folder in ["bin", "lists", "strategies", "assets"]:
         folder_path = ROOT / folder
-        if folder_path.exists():
+        if folder_path.exists() and any(folder_path.iterdir()):
             data_folders.extend(["--add-data", f"{folder};{folder}"])
+        elif folder_path.exists():
+            print(f"⚠ Предупреждение: папка {folder} пуста, пропускаем")
         else:
             print(f"⚠ Предупреждение: папка {folder} не найдена, пропускаем")
 
