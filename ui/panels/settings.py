@@ -61,6 +61,21 @@ class _ToggleRow(QWidget):
                     disable()
             except Exception as e:
                 log.warning("Автозапуск: %s", e)
+        elif self._key == "ping_monitor_enabled":
+            # Управляем ping monitor через трей
+            self._notify_ping_monitor_changed(checked)
+
+    def _notify_ping_monitor_changed(self, enabled: bool) -> None:
+        """Уведомляет трей об изменении настройки ping monitor."""
+        # Получаем главное окно
+        window = self.window()
+        if window and hasattr(window, '_tray_icon'):
+            tray = window._tray_icon
+            if tray and hasattr(tray, '_ping_monitor'):
+                if enabled:
+                    tray._ping_monitor.start()
+                else:
+                    tray._ping_monitor.stop()
 
 
 class _PathRow(QWidget):
@@ -146,6 +161,11 @@ class SettingsPanel(QWidget):
             "Показывать подсказку Secure DNS",
             "Рекомендует включить DoH/DoT для лучшего обхода",
             "secure_dns_hint",
+        ))
+        lay.addWidget(_ToggleRow(
+            "Мониторинг подключения в трее",
+            "Показывает индикатор статуса интернета на иконке трея (проверка каждые 5 сек)",
+            "ping_monitor_enabled",
         ))
         lay.addWidget(_separator())
 

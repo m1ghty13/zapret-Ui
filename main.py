@@ -202,6 +202,7 @@ def main() -> None:
     tray_icon = create_tray_icon(window, app)
     if tray_icon:
         tray_icon.show()
+        window._tray_icon = tray_icon  # Сохраняем ссылку для доступа из SettingsPanel
         log.info("System tray icon created")
 
     # Показываем окно

@@ -8,27 +8,43 @@ from PyQt6.QtCore import Qt
 
 import core.config as cfg
 import core.strategies as strats
+from core.ping_monitor import PingMonitor
 
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).parent.parent
 
 
-def _icon(name: str) -> QIcon:
-    """Загружает иконку из assets/ или создаёт fallback."""
+def _icon(name: str, connection_status: bool | None = None) -> QIcon:
+    """Загружает иконку из assets/ или создаёт fallback с индикатором подключения."""
     path = ROOT / "assets" / name
     if path.exists():
-        return QIcon(str(path))
+        pixmap = QPixmap(str(path))
+    else:
+        # Fallback: создаём простую цветную иконку
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        color = QColor("#00ff00") if "active" in name else QColor("#888888")
+        painter.setBrush(color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(8, 8, 48, 48)
+        painter.end()
 
-    # Fallback: создаём простую цветную иконку
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    color = QColor("#00ff00") if "active" in name else QColor("#888888")
-    painter.setBrush(color)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(8, 8, 48, 48)
-    painter.end()
+    # Добавляем индикатор подключения (маленький кружок в правом нижнем углу)
+    if connection_status is not None:
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Цвет индикатора: зелёный = online, красный = offline
+        indicator_color = QColor("#34c759") if connection_status else QColor("#ff3b30")
+
+        # Рисуем кружок 16x16 в правом нижнем углу
+        painter.setBrush(indicator_color)
+        painter.setPen(QColor("#ffffff"))  # Белая обводка
+        painter.drawEllipse(pixmap.width() - 20, pixmap.height() - 20, 16, 16)
+        painter.end()
+
     return QIcon(pixmap)
 
 
@@ -40,6 +56,8 @@ class TrayIcon:
         self._app = app
         self._tray: QSystemTrayIcon | None = None
         self._strategies_menu: QMenu | None = None
+        self._ping_monitor = PingMonitor(interval_ms=5000, parent=app)
+        self._connection_status: bool | None = None
 
     def setup(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -62,6 +80,13 @@ class TrayIcon:
 
         # Подписываемся на статус runner
         self._win.runner.status_changed.connect(self._on_status_changed)
+
+        # Подписываемся на ping monitor
+        self._ping_monitor.status_changed.connect(self._on_connection_changed)
+
+        # Запускаем ping monitor если включено в настройках
+        if cfg.get("ping_monitor_enabled", False):
+            self._ping_monitor.start()
 
         log.info("Системный трей создан (Qt native)")
 
@@ -196,7 +221,7 @@ class TrayIcon:
 
         if running:
             strategy = self._win.runner.current_strategy()
-            self._tray.setIcon(_icon("icon-active.ico"))
+            self._tray.setIcon(_icon("icon-active.ico", self._connection_status))
             self._tray.setToolTip(f"Zapret UI — Активно ({strategy})")
             self._act_status.setText(f"Статус: ✓ Активно ({strategy})")
             self._act_toggle.setText("⏹ Выключить")
@@ -209,7 +234,7 @@ class TrayIcon:
                 3000,
             )
         else:
-            self._tray.setIcon(_icon("icon-inactive.ico"))
+            self._tray.setIcon(_icon("icon-inactive.ico", self._connection_status))
             self._tray.setToolTip("Zapret UI — Выключено")
             self._act_status.setText("Статус: Выключено")
             self._act_toggle.setText("▶ Включить")
@@ -223,6 +248,35 @@ class TrayIcon:
 
         # Обновляем чекбоксы в меню стратегий
         self._update_strategies_menu()
+
+    def _on_connection_changed(self, online: bool) -> None:
+        """Обработка изменения статуса подключения."""
+        self._connection_status = online
+
+        # Обновляем иконку с новым индикатором
+        if self._tray is None:
+            return
+
+        running = self._win.runner.is_running()
+        icon_name = "icon-active.ico" if running else "icon-inactive.ico"
+        self._tray.setIcon(_icon(icon_name, self._connection_status))
+
+        # Показываем уведомление только если мониторинг включен
+        if cfg.get("ping_monitor_enabled", False):
+            if not online:
+                self._tray.showMessage(
+                    "Zapret UI",
+                    "⚠️ Подключение к интернету потеряно",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    3000,
+                )
+            else:
+                self._tray.showMessage(
+                    "Zapret UI",
+                    "✓ Подключение к интернету восстановлено",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    2000,
+                )
 
     def _update_strategies_menu(self) -> None:
         """Обновляет чекбоксы в меню стратегий."""
