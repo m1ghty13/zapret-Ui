@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 import core.config as cfg
-from core.autostart import set_autostart, is_autostart_enabled
+from core.autostart import enable as autostart_enable, disable as autostart_disable, is_enabled as is_autostart_enabled
 
 log = logging.getLogger(__name__)
 
@@ -180,7 +180,10 @@ class SettingsPanel(QWidget):
         cfg.set("ping_monitor_enabled", self._ping_chk.isChecked())
         cfg.set("autorun_on_start", self._autorun_chk.isChecked())
         try:
-            set_autostart(self._autostart_chk.isChecked())
+            if self._autostart_chk.isChecked():
+                autostart_enable()
+            else:
+                autostart_disable()
         except Exception as e:
             log.warning("Autostart error: %s", e)
         cfg.save()
