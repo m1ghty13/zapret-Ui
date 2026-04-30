@@ -3,7 +3,7 @@ import logging
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QCheckBox, QFrame, QSizePolicy, QPushButton, QFlowLayout,
+    QCheckBox, QFrame, QSizePolicy, QPushButton,
 )
 from PyQt6.QtCore import Qt
 
@@ -12,11 +12,6 @@ import core.domains as domains_mod
 
 log = logging.getLogger(__name__)
 
-
-# PyQt6 не включает QFlowLayout — реализуем простой wrap-layout
-class _FlowLayout(QVBoxLayout):
-    """Упрощённая имитация flow-layout через обёртку в QHBoxLayout."""
-    pass
 
 
 class _DomainTag(QLabel):
