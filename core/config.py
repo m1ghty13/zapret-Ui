@@ -19,6 +19,7 @@ _DEFAULTS: dict[str, Any] = {
     "is_first_run": True,
     "secure_dns_hint": True,
     "ping_monitor_enabled": False,
+    "auto_recovery_enabled": False,
     "winws_path": "bin/winws.exe",
     "hostlist_path": "lists/hostlist.txt",
     "tested_strategies": {},   # { "ALT": {"score": 3, "total": 5, "status": "works"} }

@@ -64,6 +64,9 @@ class _ToggleRow(QWidget):
         elif self._key == "ping_monitor_enabled":
             # Управляем ping monitor через трей
             self._notify_ping_monitor_changed(checked)
+        elif self._key == "auto_recovery_enabled":
+            # Управляем auto-recovery через главное окно
+            self._notify_auto_recovery_changed(checked)
 
     def _notify_ping_monitor_changed(self, enabled: bool) -> None:
         """Уведомляет трей об изменении настройки ping monitor."""
@@ -76,6 +79,15 @@ class _ToggleRow(QWidget):
                     tray._ping_monitor.start()
                 else:
                     tray._ping_monitor.stop()
+
+    def _notify_auto_recovery_changed(self, enabled: bool) -> None:
+        """Уведомляет главное окно об изменении настройки auto-recovery."""
+        window = self.window()
+        if window and hasattr(window, 'auto_recovery'):
+            if enabled:
+                window.auto_recovery.start()
+            else:
+                window.auto_recovery.stop()
 
 
 class _PathRow(QWidget):
@@ -166,6 +178,11 @@ class SettingsPanel(QWidget):
             "Мониторинг подключения в трее",
             "Показывает индикатор статуса интернета на иконке трея (проверка каждые 5 сек)",
             "ping_monitor_enabled",
+        ))
+        lay.addWidget(_ToggleRow(
+            "Автоматический перезапуск при падении",
+            "Перезапускает winws.exe если процесс упал (проверка каждые 3 сек)",
+            "auto_recovery_enabled",
         ))
         lay.addWidget(_separator())
 

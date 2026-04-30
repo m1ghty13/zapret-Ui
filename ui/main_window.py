@@ -14,6 +14,7 @@ import core.domains as domains_mod
 from core.runner import WinwsRunner
 from core.tester import StrategyTester
 from core.health_monitor import HealthMonitor
+from core.auto_recovery import AutoRecovery
 from ui.panels.home import HomePanel
 from ui.panels.strategies import StrategiesPanel
 from ui.panels.domains import DomainsPanel
@@ -45,12 +46,20 @@ class MainWindow(QMainWindow):
         self.runner = WinwsRunner(self)
         self.tester = StrategyTester(self)
         self.health_monitor = HealthMonitor(self.runner.is_running, self)
+        self.auto_recovery = AutoRecovery(self.runner, interval_ms=3000, parent=self)
 
         # Сигналы runner
         self.runner.status_changed.connect(self._on_status_changed)
 
         # Сигналы health monitor
         self.health_monitor.health_changed.connect(self._on_health_changed)
+
+        # Сигналы auto-recovery
+        self.auto_recovery.recovery_triggered.connect(self._on_recovery_triggered)
+
+        # Запускаем auto-recovery если включено
+        if cfg.get("auto_recovery_enabled", False):
+            self.auto_recovery.start()
 
         self._sidebar_btns: dict[str, QPushButton] = {}
         self._current_page = "home"
@@ -187,6 +196,19 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self.trigger_auto_test()
+
+    def _on_recovery_triggered(self, strategy_name: str) -> None:
+        """Обработка автоматического перезапуска."""
+        log.info("Auto-recovery triggered for strategy: %s", strategy_name)
+        # Показываем уведомление через трей
+        if hasattr(self, '_tray_icon') and self._tray_icon and self._tray_icon._tray:
+            from PyQt6.QtWidgets import QSystemTrayIcon
+            self._tray_icon._tray.showMessage(
+                "Zapret UI - Auto-recovery",
+                f"winws.exe был автоматически перезапущен\nСтратегия: {strategy_name}",
+                QSystemTrayIcon.MessageIcon.Warning,
+                4000,
+            )
 
     def _on_test_finished(self, best: str, scores: dict) -> None:
         if best:
