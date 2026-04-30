@@ -1,18 +1,20 @@
 """Панель «Стратегии» — список, авто-тест, прогресс-бар."""
 import logging
+import os
 from typing import Any
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
     QProgressBar, QFrame, QCheckBox, QSizePolicy,
-    QScrollArea,
+    QScrollArea, QMessageBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont
 
 import core.config as cfg
 import core.strategies as strats
+from core.exporter import export_to_bat, export_bundle
 
 log = logging.getLogger(__name__)
 
@@ -31,10 +33,11 @@ _TEST_DOMAINS = [
 
 
 class _StrategyItem(QWidget):
-    """Строка в списке: имя стратегии + бейдж статуса."""
+    """Строка в списке: имя стратегии + бейдж статуса + кнопка экспорта."""
 
     def __init__(self, name: str, status: str | None = None, parent=None):
         super().__init__(parent)
+        self._name = name
         lay = QHBoxLayout(self)
         lay.setContentsMargins(4, 2, 4, 2)
 
@@ -47,6 +50,14 @@ class _StrategyItem(QWidget):
         self._badge.setFixedWidth(110)
         lay.addWidget(self._badge)
 
+        # Кнопка экспорта
+        self._export_btn = QPushButton("📦")
+        self._export_btn.setFixedSize(32, 32)
+        self._export_btn.setObjectName("Secondary")
+        self._export_btn.setToolTip("Экспортировать как .bat")
+        self._export_btn.clicked.connect(self._on_export)
+        lay.addWidget(self._export_btn)
+
         self.set_status(status)
 
     def set_status(self, status: str | None) -> None:
@@ -55,6 +66,16 @@ class _StrategyItem(QWidget):
         self._badge.setObjectName(obj_name)
         self._badge.style().unpolish(self._badge)
         self._badge.style().polish(self._badge)
+
+    def _on_export(self) -> None:
+        """Обработка клика по кнопке экспорта."""
+        # Получаем родительскую панель
+        panel = self.parent()
+        while panel and not isinstance(panel, StrategiesPanel):
+            panel = panel.parent()
+
+        if panel:
+            panel.export_strategy(self._name)
 
 
 class StrategiesPanel(QWidget):
@@ -240,3 +261,86 @@ class StrategiesPanel(QWidget):
         else:
             self._selected_test_domains.discard(domain)
         cfg.set("test_domains", list(self._selected_test_domains))
+
+    def export_strategy(self, strategy_name: str) -> None:
+        """Экспортирует стратегию в .bat файл или bundle."""
+        # Диалог выбора типа экспорта
+        reply = QMessageBox.question(
+            self,
+            "Экспорт стратегии",
+            f"Экспортировать стратегию '{strategy_name}'?\n\n"
+            "• Только .bat — один файл для запуска\n"
+            "• Полный bundle — папка с winws.exe, hostlist.txt и .bat файлами\n\n"
+            "Выберите тип экспорта:",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+        )
+
+        if reply == QMessageBox.StandardButton.Cancel:
+            return
+
+        is_bundle = reply == QMessageBox.StandardButton.No  # No = bundle
+
+        try:
+            if is_bundle:
+                # Экспорт bundle
+                output_dir = QFileDialog.getExistingDirectory(
+                    self,
+                    "Выберите папку для bundle",
+                    "",
+                    QFileDialog.Option.ShowDirsOnly
+                )
+
+                if not output_dir:
+                    return
+
+                bundle_path = export_bundle(strategy_name, output_dir)
+
+                # Диалог с кнопкой "Открыть папку"
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("Экспорт завершён")
+                msg.setText(f"Bundle создан успешно!")
+                msg.setInformativeText(f"Путь: {bundle_path}")
+                open_btn = msg.addButton("Открыть папку", QMessageBox.ButtonRole.AcceptRole)
+                msg.addButton(QMessageBox.StandardButton.Ok)
+                msg.exec()
+
+                if msg.clickedButton() == open_btn:
+                    # Открываем папку в проводнике
+                    if os.name == 'nt':  # Windows
+                        os.startfile(bundle_path)
+                    elif os.name == 'posix':  # macOS/Linux
+                        os.system(f'open "{bundle_path}"' if os.uname().sysname == 'Darwin' else f'xdg-open "{bundle_path}"')
+
+            else:
+                # Экспорт только .bat
+                output_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Сохранить .bat файл",
+                    f"{strategy_name}.bat",
+                    "Batch файлы (*.bat)"
+                )
+
+                if not output_path:
+                    return
+
+                hostlist_path = cfg.get("hostlist_path", "lists/hostlist.txt")
+                export_to_bat(strategy_name, hostlist_path, output_path)
+
+                QMessageBox.information(
+                    self,
+                    "Экспорт завершён",
+                    f"Файл сохранён:\n{output_path}\n\n"
+                    "Не забудьте поместить winws.exe и hostlist.txt\n"
+                    "в ту же папку, что и .bat файл!"
+                )
+
+            log.info("Экспортирована стратегия: %s", strategy_name)
+
+        except Exception as e:
+            log.error("Ошибка экспорта: %s", e)
+            QMessageBox.critical(
+                self,
+                "Ошибка экспорта",
+                f"Не удалось экспортировать стратегию:\n{e}"
+            )
