@@ -72,8 +72,6 @@ def check_and_install_dependencies() -> bool:
     """Проверяем и устанавливаем недостающие зависимости."""
     required_packages = {
         'PyQt6': 'PyQt6>=6.6.0',
-        'pystray': 'pystray>=0.19.0',
-        'PIL': 'Pillow>=10.0.0',
     }
 
     missing_packages = []
