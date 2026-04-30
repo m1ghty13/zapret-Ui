@@ -25,6 +25,15 @@ def main() -> None:
     else:
         icon_arg = ["--icon", str(icon_path)]
 
+    # Собираем список папок для добавления
+    data_folders = []
+    for folder in ["bin", "lists", "strategies", "assets"]:
+        folder_path = ROOT / folder
+        if folder_path.exists():
+            data_folders.extend(["--add-data", f"{folder};{folder}"])
+        else:
+            print(f"⚠ Предупреждение: папка {folder} не найдена, пропускаем")
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
@@ -32,11 +41,9 @@ def main() -> None:
         "--name=ZapretUI",
         *icon_arg,
         "--manifest", str(manifest_path),
-        "--add-data", "bin;bin",
-        "--add-data", "lists;lists",
-        "--add-data", "strategies;strategies",
-        "--add-data", "assets;assets",
+        *data_folders,
         "--hidden-import=PyQt6.sip",
+        "--hidden-import=psutil",
         str(main_py),
     ]
 
