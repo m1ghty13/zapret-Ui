@@ -51,7 +51,22 @@ class TrayIcon:
         self._tray.setToolTip("Zapret UI — Выключено")
         self._tray.activated.connect(self._on_activated)
 
-        # Контекстное меню
+        # Контекстное меню (правый клик)
+        self._context_menu = self._build_context_menu()
+        self._tray.setContextMenu(self._context_menu)
+
+        # Quick switcher меню (левый клик) - создаётся динамически
+        self._quick_menu: QMenu | None = None
+
+        self._tray.show()
+
+        # Подписываемся на статус runner
+        self._win.runner.status_changed.connect(self._on_status_changed)
+
+        log.info("Системный трей создан (Qt native)")
+
+    def _build_context_menu(self) -> QMenu:
+        """Строит полное контекстное меню (правый клик)."""
         menu = QMenu()
 
         # Статус (неактивный пункт)
@@ -87,13 +102,48 @@ class TrayIcon:
         act_quit.triggered.connect(self._win.force_quit)
         menu.addAction(act_quit)
 
-        self._tray.setContextMenu(menu)
-        self._tray.show()
+        return menu
 
-        # Подписываемся на статус runner
-        self._win.runner.status_changed.connect(self._on_status_changed)
+    def _build_quick_switcher_menu(self) -> QMenu:
+        """Строит компактное меню для быстрого переключения (левый клик)."""
+        menu = QMenu()
 
-        log.info("Системный трей создан (Qt native)")
+        # Заголовок
+        header = QAction("Быстрое переключение", menu)
+        header.setEnabled(False)
+        menu.addAction(header)
+
+        menu.addSeparator()
+
+        # Последние 5 стратегий
+        recent = cfg.get("recent_strategies", [])
+        current = self._win.runner.current_strategy()
+        test_results = cfg.get("tested_strategies", {})
+
+        if recent:
+            for strategy_name in recent:
+                # Формируем текст с результатами теста если есть
+                text = strategy_name
+                if strategy_name in test_results:
+                    result = test_results[strategy_name]
+                    score = result.get("score", 0)
+                    total = result.get("total", 0)
+                    text = f"{strategy_name} ({score}/{total})"
+
+                action = QAction(text, menu)
+                action.setCheckable(True)
+                action.setChecked(strategy_name == current)
+                action.triggered.connect(lambda checked, s=strategy_name: self._quick_switch(s))
+                menu.addAction(action)
+
+            menu.addSeparator()
+
+        # "Все стратегии" - открывает окно на панели стратегий
+        act_all = QAction("Все стратегии ►", menu)
+        act_all.triggered.connect(self._open_strategies_panel)
+        menu.addAction(act_all)
+
+        return menu
 
     def _build_strategies_menu(self) -> None:
         """Строит подменю со списком стратегий (первые 10)."""
@@ -112,8 +162,26 @@ class TrayIcon:
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """Обработка кликов по иконке."""
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Левый клик - показываем quick switcher
+            self._show_quick_switcher()
+        elif reason == QSystemTrayIcon.ActivationReason.Context:
+            # Правый клик - контекстное меню (показывается автоматически)
+            pass
+        elif reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            # Двойной клик - показываем главное окно
             self._show_window()
+
+    def _show_quick_switcher(self) -> None:
+        """Показывает quick switcher меню рядом с курсором."""
+        from PyQt6.QtGui import QCursor
+
+        # Пересоздаём меню каждый раз для актуальности данных
+        if self._quick_menu:
+            self._quick_menu.deleteLater()
+
+        self._quick_menu = self._build_quick_switcher_menu()
+        self._quick_menu.exec(QCursor.pos())
 
     def _show_window(self) -> None:
         """Показывает и активирует главное окно."""
@@ -195,6 +263,22 @@ class TrayIcon:
                 QSystemTrayIcon.MessageIcon.Information,
                 2000,
             )
+
+    def _quick_switch(self, strategy_name: str) -> None:
+        """Быстрое переключение стратегии из quick switcher."""
+        current = self._win.runner.current_strategy()
+
+        # Если выбрана текущая - ничего не делать
+        if strategy_name == current:
+            return
+
+        self._switch_strategy(strategy_name)
+
+    def _open_strategies_panel(self) -> None:
+        """Открывает главное окно на панели стратегий."""
+        self._show_window()
+        # Переключаем на панель стратегий
+        self._win._navigate("strategies")
 
 
 def create_tray_icon(main_window, app: QApplication) -> TrayIcon:

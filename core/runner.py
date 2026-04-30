@@ -100,6 +100,7 @@ class WinwsRunner(QObject):
         self._reader.start()
 
         cfg.set("current_strategy", strategy_name)
+        cfg.add_recent_strategy(strategy_name)  # Добавляем в recent
         self.status_changed.emit(True)
         return True
 
