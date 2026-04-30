@@ -1,34 +1,119 @@
-"""QSS-стили: light + dark тема с фиолетовым акцентом."""
+"""QSS-стили: динамические темы с настраиваемым акцентом."""
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPalette
 from PyQt6.QtCore import Qt
 
-ACCENT = "#534AB7"
-ACCENT_HOVER = "#6559CC"
-ACCENT_PRESSED = "#3E3690"
+# Цветовые палитры
+DARK = {
+    "bg": "#1c1c1e",
+    "sidebar": "#2c2c2e",
+    "card": "#2c2c2e",
+    "text": "#f2f2f7",
+    "text_secondary": "#8e8e93",
+    "border": "#3a3a3c",
+    "input_bg": "#2c2c2e",
+    "hover_bg": "rgba({accent_rgb}, 0.18)",
+    "selected_bg": "rgba({accent_rgb}, 0.30)",
+}
 
-SUCCESS_BG = "#eaf3de"
-SUCCESS_FG = "#3B6D11"
-WARN_BG = "#fff4e0"
-WARN_FG = "#7d4e00"
-ERROR_BG = "#fde8e8"
-ERROR_FG = "#8b1a1a"
-NEUTRAL_BG = "#f0f0f0"
-NEUTRAL_FG = "#555555"
+LIGHT = {
+    "bg": "#f5f5f7",
+    "sidebar": "#ebebf0",
+    "card": "#ffffff",
+    "text": "#1c1c1e",
+    "text_secondary": "#8e8e93",
+    "border": "#dcdce4",
+    "input_bg": "#ffffff",
+    "hover_bg": "rgba({accent_rgb}, 0.07)",
+    "selected_bg": "rgba({accent_rgb}, 0.14)",
+}
 
-_LIGHT_QSS = f"""
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Конвертирует #RRGGBB в (R, G, B)."""
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+
+def _lighten(hex_color: str, factor: float = 1.2) -> str:
+    """Осветляет цвет (для hover)."""
+    r, g, b = _hex_to_rgb(hex_color)
+    r = min(255, int(r * factor))
+    g = min(255, int(g * factor))
+    b = min(255, int(b * factor))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _darken(hex_color: str, factor: float = 0.8) -> str:
+    """Затемняет цвет (для pressed)."""
+    r, g, b = _hex_to_rgb(hex_color)
+    r = int(r * factor)
+    g = int(g * factor)
+    b = int(b * factor)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def build_qss(theme: str, accent_color: str) -> str:
+    """
+    Строит QSS для заданной темы и цвета акцента.
+
+    Args:
+        theme: "dark" | "light" | "system"
+        accent_color: hex строка, например "#007aff"
+    """
+    # Определяем палитру
+    if theme == "system":
+        palette = DARK if _is_system_dark() else LIGHT
+    elif theme == "light":
+        palette = LIGHT
+    else:  # dark
+        palette = DARK
+
+    # Генерируем производные цвета акцента
+    accent_hover = _lighten(accent_color, 1.15)
+    accent_pressed = _darken(accent_color, 0.85)
+    accent_rgb = ", ".join(map(str, _hex_to_rgb(accent_color)))
+
+    # Подставляем accent_rgb в hover/selected
+    hover_bg = palette["hover_bg"].format(accent_rgb=accent_rgb)
+    selected_bg = palette["selected_bg"].format(accent_rgb=accent_rgb)
+
+    # Статусные цвета (одинаковые для обеих тем)
+    if theme == "light" or (theme == "system" and not _is_system_dark()):
+        success_fg = "#3B6D11"
+        success_bg = "#eaf3de"
+        warn_fg = "#7d4e00"
+        warn_bg = "#fff4e0"
+        error_fg = "#8b1a1a"
+        error_bg = "#fde8e8"
+        neutral_fg = "#555555"
+        neutral_bg = "#f0f0f0"
+        status_ok = success_fg
+        status_err = "#e74c3c"
+    else:
+        success_fg = "#6abe3a"
+        success_bg = "#1e3310"
+        warn_fg = "#f0a500"
+        warn_bg = "#3d2e00"
+        error_fg = "#ff6b6b"
+        error_bg = "#3d1010"
+        neutral_fg = "#8e8e93"
+        neutral_bg = "#2c2c2e"
+        status_ok = "#6abe3a"
+        status_err = "#ff6b6b"
+
+    return f"""
 /* ── Общие ── */
 QMainWindow, QDialog, QWidget {{
-    background-color: #f5f5f7;
+    background-color: {palette["bg"]};
     font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
     font-size: 13px;
-    color: #1c1c1e;
+    color: {palette["text"]};
 }}
 
 /* ── Sidebar ── */
 #Sidebar {{
-    background-color: #ebebf0;
-    border-right: 1px solid #dcdce4;
+    background-color: {palette["sidebar"]};
+    border-right: 1px solid {palette["border"]};
 }}
 #SidebarButton {{
     background: transparent;
@@ -37,21 +122,21 @@ QMainWindow, QDialog, QWidget {{
     padding: 10px 16px;
     text-align: left;
     font-size: 13px;
-    color: #3a3a3c;
+    color: {palette["text"]};
 }}
 #SidebarButton:hover {{
-    background-color: rgba(83, 74, 183, 0.10);
-    color: {ACCENT};
+    background-color: {hover_bg};
+    color: {accent_color};
 }}
 #SidebarButton[active="true"] {{
-    background-color: rgba(83, 74, 183, 0.15);
-    color: {ACCENT};
+    background-color: {selected_bg};
+    color: {accent_color};
     font-weight: 600;
 }}
 
 /* ── Кнопки ── */
 QPushButton {{
-    background-color: {ACCENT};
+    background-color: {accent_color};
     color: white;
     border: none;
     border-radius: 8px;
@@ -59,17 +144,17 @@ QPushButton {{
     font-size: 13px;
     font-weight: 500;
 }}
-QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
-QPushButton:pressed {{ background-color: {ACCENT_PRESSED}; }}
-QPushButton:disabled {{ background-color: #c7c7cc; color: #8e8e93; }}
+QPushButton:hover {{ background-color: {accent_hover}; }}
+QPushButton:pressed {{ background-color: {accent_pressed}; }}
+QPushButton:disabled {{ background-color: {palette["border"]}; color: {palette["text_secondary"]}; }}
 
 QPushButton#Secondary {{
     background-color: transparent;
-    color: {ACCENT};
-    border: 1.5px solid {ACCENT};
+    color: {accent_color};
+    border: 1.5px solid {accent_color};
 }}
-QPushButton#Secondary:hover {{ background-color: rgba(83,74,183,0.08); }}
-QPushButton#Secondary:pressed {{ background-color: rgba(83,74,183,0.15); }}
+QPushButton#Secondary:hover {{ background-color: {hover_bg}; }}
+QPushButton#Secondary:pressed {{ background-color: {selected_bg}; }}
 
 QPushButton#Danger {{
     background-color: #e74c3c;
@@ -85,7 +170,7 @@ QPushButton#ToggleBtn {{
     max-height: 72px;
     font-size: 26px;
     padding: 0;
-    background-color: {ACCENT};
+    background-color: {accent_color};
     color: white;
 }}
 QPushButton#ToggleBtn[running="true"] {{
@@ -95,20 +180,20 @@ QPushButton#ToggleBtn:hover {{ opacity: 0.85; }}
 
 /* ── Поля ввода ── */
 QLineEdit, QTextEdit, QPlainTextEdit {{
-    background-color: #ffffff;
-    border: 1.5px solid #dcdce4;
+    background-color: {palette["input_bg"]};
+    border: 1.5px solid {palette["border"]};
     border-radius: 8px;
     padding: 6px 10px;
-    color: #1c1c1e;
+    color: {palette["text"]};
 }}
 QLineEdit:focus, QPlainTextEdit:focus {{
-    border-color: {ACCENT};
+    border-color: {accent_color};
 }}
 
 /* ── Список стратегий ── */
 QListWidget {{
-    background-color: #ffffff;
-    border: 1px solid #dcdce4;
+    background-color: {palette["card"]};
+    border: 1px solid {palette["border"]};
     border-radius: 10px;
     outline: none;
     padding: 4px;
@@ -118,22 +203,22 @@ QListWidget::item {{
     padding: 6px 10px;
     min-height: 36px;
 }}
-QListWidget::item:hover {{ background-color: rgba(83,74,183,0.07); }}
+QListWidget::item:hover {{ background-color: {hover_bg}; }}
 QListWidget::item:selected {{
-    background-color: rgba(83,74,183,0.14);
-    color: {ACCENT};
+    background-color: {selected_bg};
+    color: {accent_color};
 }}
 
 /* ── Прогресс-бар ── */
 QProgressBar {{
     border: none;
     border-radius: 6px;
-    background-color: #e5e5ea;
+    background-color: {palette["border"]};
     height: 8px;
     text-align: center;
 }}
 QProgressBar::chunk {{
-    background-color: {ACCENT};
+    background-color: {accent_color};
     border-radius: 6px;
 }}
 
@@ -145,7 +230,7 @@ QScrollBar:vertical {{
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: #c7c7cc;
+    background: {palette["text_secondary"]};
     border-radius: 3px;
     min-height: 24px;
 }}
@@ -154,157 +239,90 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 /* ── Чекбоксы / переключатели ── */
 QCheckBox {{
     spacing: 8px;
-    color: #1c1c1e;
+    color: {palette["text"]};
 }}
 QCheckBox::indicator {{
     width: 18px; height: 18px;
     border-radius: 5px;
-    border: 1.5px solid #8e8e93;
-    background: white;
+    border: 1.5px solid {palette["text_secondary"]};
+    background: {palette["input_bg"]};
 }}
 QCheckBox::indicator:checked {{
-    background: {ACCENT};
-    border-color: {ACCENT};
+    background: {accent_color};
+    border-color: {accent_color};
 }}
+
+/* ── Комбобоксы ── */
+QComboBox {{
+    background-color: {palette["input_bg"]};
+    border: 1.5px solid {palette["border"]};
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: {palette["text"]};
+}}
+QComboBox:focus {{ border-color: {accent_color}; }}
+QComboBox::drop-down {{ border: none; }}
+QComboBox QAbstractItemView {{
+    background-color: {palette["card"]};
+    border: 1px solid {palette["border"]};
+    selection-background-color: {selected_bg};
+    selection-color: {accent_color};
+}}
+
+/* ── Спинбоксы ── */
+QSpinBox {{
+    background-color: {palette["input_bg"]};
+    border: 1.5px solid {palette["border"]};
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: {palette["text"]};
+}}
+QSpinBox:focus {{ border-color: {accent_color}; }}
 
 /* ── Разделители ── */
 QFrame[frameShape="4"], QFrame[frameShape="5"] {{
-    color: #dcdce4;
+    color: {palette["border"]};
 }}
 
 /* ── Лейблы-заголовки ── */
 QLabel#SectionTitle {{
     font-size: 11px;
     font-weight: 600;
-    color: #8e8e93;
+    color: {palette["text_secondary"]};
     letter-spacing: 0.5px;
 }}
-QLabel#StatusOk  {{ color: {SUCCESS_FG}; font-weight: 600; }}
-QLabel#StatusErr {{ color: #e74c3c; font-weight: 600; }}
+QLabel#StatusOk  {{ color: {status_ok}; font-weight: 600; }}
+QLabel#StatusErr {{ color: {status_err}; font-weight: 600; }}
 
 /* ── Бейдж стратегии ── */
-QLabel#BadgeWorks   {{ color: {SUCCESS_FG}; background: {SUCCESS_BG}; border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgePartial {{ color: {WARN_FG};    background: {WARN_BG};    border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgeFails   {{ color: {ERROR_FG};   background: {ERROR_BG};   border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgeNone    {{ color: {NEUTRAL_FG}; background: {NEUTRAL_BG}; border-radius: 5px; padding: 1px 7px; }}
+QLabel#BadgeWorks   {{ color: {success_fg}; background: {success_bg}; border-radius: 5px; padding: 1px 7px; }}
+QLabel#BadgePartial {{ color: {warn_fg};    background: {warn_bg};    border-radius: 5px; padding: 1px 7px; }}
+QLabel#BadgeFails   {{ color: {error_fg};   background: {error_bg};   border-radius: 5px; padding: 1px 7px; }}
+QLabel#BadgeNone    {{ color: {neutral_fg}; background: {neutral_bg}; border-radius: 5px; padding: 1px 7px; }}
 
 /* ── Скруглённая карточка ── */
 QFrame#Card {{
-    background: #ffffff;
-    border: 1px solid #dcdce4;
+    background: {palette["card"]};
+    border: 1px solid {palette["border"]};
     border-radius: 12px;
 }}
 """
 
-_DARK_QSS = f"""
-QMainWindow, QDialog, QWidget {{
-    background-color: #1c1c1e;
-    font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
-    font-size: 13px;
-    color: #f2f2f7;
-}}
-#Sidebar {{
-    background-color: #2c2c2e;
-    border-right: 1px solid #3a3a3c;
-}}
-#SidebarButton {{
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    text-align: left;
-    font-size: 13px;
-    color: #ebebf0;
-}}
-#SidebarButton:hover {{ background-color: rgba(83,74,183,0.20); color: #a89fe8; }}
-#SidebarButton[active="true"] {{
-    background-color: rgba(83,74,183,0.30);
-    color: #c4bef5;
-    font-weight: 600;
-}}
-QPushButton {{
-    background-color: {ACCENT};
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 500;
-}}
-QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}
-QPushButton:pressed {{ background-color: {ACCENT_PRESSED}; }}
-QPushButton:disabled {{ background-color: #3a3a3c; color: #636366; }}
-QPushButton#Secondary {{
-    background-color: transparent;
-    color: #a89fe8;
-    border: 1.5px solid #534AB7;
-}}
-QPushButton#Danger {{ background-color: #c0392b; }}
-QPushButton#ToggleBtn {{
-    border-radius: 36px;
-    min-width: 72px; min-height: 72px;
-    max-width: 72px; max-height: 72px;
-    font-size: 26px; padding: 0;
-    background-color: {ACCENT};
-    color: white;
-}}
-QPushButton#ToggleBtn[running="true"] {{ background-color: #c0392b; }}
-QLineEdit, QTextEdit, QPlainTextEdit {{
-    background-color: #2c2c2e;
-    border: 1.5px solid #3a3a3c;
-    border-radius: 8px;
-    padding: 6px 10px;
-    color: #f2f2f7;
-}}
-QLineEdit:focus {{ border-color: {ACCENT}; }}
-QListWidget {{
-    background-color: #2c2c2e;
-    border: 1px solid #3a3a3c;
-    border-radius: 10px;
-    outline: none;
-    padding: 4px;
-    color: #f2f2f7;
-}}
-QListWidget::item {{ border-radius: 6px; padding: 6px 10px; min-height: 36px; }}
-QListWidget::item:hover {{ background-color: rgba(83,74,183,0.18); }}
-QListWidget::item:selected {{ background-color: rgba(83,74,183,0.30); color: #c4bef5; }}
-QProgressBar {{
-    border: none; border-radius: 6px;
-    background-color: #3a3a3c; height: 8px;
-}}
-QProgressBar::chunk {{ background-color: {ACCENT}; border-radius: 6px; }}
-QScrollBar:vertical {{
-    border: none; background: transparent; width: 6px; margin: 0;
-}}
-QScrollBar::handle:vertical {{ background: #636366; border-radius: 3px; min-height: 24px; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QCheckBox {{ spacing: 8px; color: #f2f2f7; }}
-QCheckBox::indicator {{
-    width: 18px; height: 18px; border-radius: 5px;
-    border: 1.5px solid #636366; background: #3a3a3c;
-}}
-QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
-QFrame[frameShape="4"], QFrame[frameShape="5"] {{ color: #3a3a3c; }}
-QLabel#SectionTitle {{ font-size: 11px; font-weight: 600; color: #636366; letter-spacing: 0.5px; }}
-QLabel#StatusOk {{ color: #6abe3a; font-weight: 600; }}
-QLabel#StatusErr {{ color: #ff6b6b; font-weight: 600; }}
-QLabel#BadgeWorks   {{ color: #6abe3a; background: #1e3310; border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgePartial {{ color: #f0a500; background: #3d2e00; border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgeFails   {{ color: #ff6b6b; background: #3d1010; border-radius: 5px; padding: 1px 7px; }}
-QLabel#BadgeNone    {{ color: #8e8e93; background: #2c2c2e; border-radius: 5px; padding: 1px 7px; }}
-QFrame#Card {{ background: #2c2c2e; border: 1px solid #3a3a3c; border-radius: 12px; }}
-"""
 
-
-def _is_dark() -> bool:
+def _is_system_dark() -> bool:
+    """Определяет, используется ли системная тёмная тема."""
     try:
-        hints = QApplication.styleHints()
-        from PyQt6.QtCore import Qt
-        return hints.colorScheme() == Qt.ColorScheme.Dark
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            # Если фон окна тёмный (lightness < 128) - тёмная тема
+            return palette.window().color().lightness() < 128
     except Exception:
-        return False
+        pass
+    return False
 
 
-def apply_theme(app: QApplication) -> None:
-    qss = _DARK_QSS if _is_dark() else _LIGHT_QSS
+def apply_theme(app: QApplication, theme: str = "dark", accent_color: str = "#007aff") -> None:
+    """Применяет тему к приложению."""
+    qss = build_qss(theme, accent_color)
     app.setStyleSheet(qss)

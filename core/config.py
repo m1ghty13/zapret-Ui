@@ -23,6 +23,8 @@ _DEFAULTS: dict[str, Any] = {
     "tested_strategies": {},   # { "ALT": {"score": 3, "total": 5, "status": "works"} }
     "test_domains": ["discord.com", "youtube.com", "instagram.com"],
     "recent_strategies": [],   # Последние 5 использованных стратегий (FIFO)
+    "theme": "dark",           # "dark" | "light" | "system"
+    "accent_color": "#007aff", # Цвет акцента в hex
 }
 
 _data: dict[str, Any] = {}

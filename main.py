@@ -188,9 +188,12 @@ def main() -> None:
     server.listen("ZapretUI_SingleInstance")
     log.info("Single-instance lock acquired")
 
-    # Применяем тему
+    # Применяем тему из конфига
     from ui.theme import apply_theme
-    apply_theme(app)
+    theme = cfg.get("theme", "dark")
+    accent = cfg.get("accent_color", "#007aff")
+    apply_theme(app, theme, accent)
+    log.info("Тема применена: %s, акцент: %s", theme, accent)
 
     # Главное окно
     window = MainWindow()

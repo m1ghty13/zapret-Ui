@@ -5,8 +5,10 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
     QLineEdit, QPushButton, QFrame, QFileDialog, QScrollArea,
+    QComboBox, QColorDialog, QApplication,
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 import core.config as cfg
 
@@ -147,6 +149,81 @@ class SettingsPanel(QWidget):
         ))
         lay.addWidget(_separator())
 
+        # ── Внешний вид ───────────────────────────────────────────────────
+        lay.addWidget(_section("Внешний вид"))
+
+        # Выбор темы
+        theme_row = QWidget()
+        theme_lay = QHBoxLayout(theme_row)
+        theme_lay.setContentsMargins(0, 6, 0, 6)
+
+        theme_label = QLabel("Тема")
+        theme_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+        theme_lay.addWidget(theme_label, stretch=1)
+
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItems(["Тёмная", "Светлая", "Системная"])
+        current_theme = cfg.get("theme", "dark")
+        theme_map = {"dark": 0, "light": 1, "system": 2}
+        self._theme_combo.setCurrentIndex(theme_map.get(current_theme, 0))
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        theme_lay.addWidget(self._theme_combo)
+
+        lay.addWidget(theme_row)
+
+        # Цвет акцента
+        accent_row = QWidget()
+        accent_lay = QHBoxLayout(accent_row)
+        accent_lay.setContentsMargins(0, 6, 0, 6)
+
+        accent_label = QLabel("Цвет акцента")
+        accent_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+        accent_lay.addWidget(accent_label, stretch=1)
+
+        # Превью текущего цвета
+        self._color_preview = QLabel("   ")
+        self._color_preview.setFixedSize(24, 24)
+        self._color_preview.setStyleSheet(f"background-color: {cfg.get('accent_color', '#007aff')}; border-radius: 12px; border: 1px solid #8e8e93;")
+        accent_lay.addWidget(self._color_preview)
+
+        # Кнопка выбора цвета
+        color_btn = QPushButton("Выбрать цвет")
+        color_btn.setObjectName("Secondary")
+        color_btn.clicked.connect(self._pick_color)
+        accent_lay.addWidget(color_btn)
+
+        lay.addWidget(accent_row)
+
+        # Пресеты цветов
+        presets_label = QLabel("Быстрый выбор:")
+        presets_label.setStyleSheet("color: #8e8e93; font-size: 11px; margin-top: 4px;")
+        lay.addWidget(presets_label)
+
+        presets_row = QWidget()
+        presets_lay = QHBoxLayout(presets_row)
+        presets_lay.setContentsMargins(0, 4, 0, 4)
+        presets_lay.setSpacing(8)
+
+        presets = [
+            ("Синий", "#007aff"),
+            ("Красный", "#ff3b30"),
+            ("Зелёный", "#34c759"),
+            ("Фиолетовый", "#af52de"),
+            ("Оранжевый", "#ff9500"),
+        ]
+
+        for name, color in presets:
+            btn = QPushButton(name)
+            btn.setFixedHeight(28)
+            btn.setStyleSheet(f"background-color: {color}; color: white; border-radius: 6px; padding: 4px 12px;")
+            btn.clicked.connect(lambda checked, c=color: self._apply_accent(c))
+            presets_lay.addWidget(btn)
+
+        presets_lay.addStretch()
+        lay.addWidget(presets_row)
+
+        lay.addWidget(_separator())
+
         # ── Пути ──────────────────────────────────────────────────────────
         lay.addWidget(_section("Пути к файлам"))
         lay.addWidget(_PathRow(
@@ -184,3 +261,44 @@ class SettingsPanel(QWidget):
 
         scroll.setWidget(container)
         root.addWidget(scroll, stretch=1)
+
+    def _on_theme_changed(self, index: int) -> None:
+        """Обработка изменения темы."""
+        theme_map = {0: "dark", 1: "light", 2: "system"}
+        theme = theme_map[index]
+        cfg.set("theme", theme)
+
+        # Применяем тему мгновенно
+        self._apply_theme()
+
+    def _pick_color(self) -> None:
+        """Открывает диалог выбора цвета."""
+        current_color = QColor(cfg.get("accent_color", "#007aff"))
+        color = QColorDialog.getColor(current_color, self, "Выберите цвет акцента")
+
+        if color.isValid():
+            hex_color = color.name()
+            self._apply_accent(hex_color)
+
+    def _apply_accent(self, hex_color: str) -> None:
+        """Применяет новый цвет акцента."""
+        cfg.set("accent_color", hex_color)
+
+        # Обновляем превью
+        self._color_preview.setStyleSheet(
+            f"background-color: {hex_color}; border-radius: 12px; border: 1px solid #8e8e93;"
+        )
+
+        # Применяем тему мгновенно
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """Применяет текущую тему к приложению."""
+        from ui.theme import apply_theme
+
+        app = QApplication.instance()
+        if app:
+            theme = cfg.get("theme", "dark")
+            accent = cfg.get("accent_color", "#007aff")
+            apply_theme(app, theme, accent)
+            log.info("Тема применена: %s, акцент: %s", theme, accent)
