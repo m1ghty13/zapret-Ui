@@ -4,11 +4,68 @@ import os
 import logging
 import logging.handlers
 import subprocess
+import traceback
 from pathlib import Path
+from datetime import datetime
 
 # Добавляем корень проекта в sys.path (нужно для PyInstaller)
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
+
+
+def setup_crash_handler() -> None:
+    """Устанавливает обработчик необработанных исключений."""
+    def exception_hook(exc_type, exc_value, exc_traceback):
+        # Не логируем KeyboardInterrupt
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        # Формируем crash report
+        appdata = Path(os.environ.get("APPDATA", Path.home())) / "ZapretUI"
+        appdata.mkdir(parents=True, exist_ok=True)
+        crash_file = appdata / f"crash_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+        tb_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        crash_report = "".join(tb_lines)
+
+        # Записываем в файл
+        try:
+            with open(crash_file, "w", encoding="utf-8") as f:
+                f.write(f"Zapret UI Crash Report\n")
+                f.write(f"Time: {datetime.now().isoformat()}\n")
+                f.write(f"Python: {sys.version}\n")
+                f.write(f"Platform: {sys.platform}\n")
+                f.write(f"\n{'='*60}\n\n")
+                f.write(crash_report)
+        except Exception:
+            pass
+
+        # Логируем
+        logging.critical("Необработанное исключение", exc_info=(exc_type, exc_value, exc_traceback))
+
+        # Показываем диалог (если Qt доступен)
+        try:
+            from PyQt6.QtWidgets import QMessageBox, QApplication
+            app = QApplication.instance()
+            if app:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Critical)
+                msg.setWindowTitle("Zapret UI - Критическая ошибка")
+                msg.setText("Приложение столкнулось с критической ошибкой.")
+                msg.setInformativeText(
+                    f"Отчёт сохранён в:\n{crash_file}\n\n"
+                    "Пожалуйста, отправьте этот файл разработчикам."
+                )
+                msg.setDetailedText(crash_report)
+                msg.exec()
+        except Exception:
+            pass
+
+        # Вызываем стандартный обработчик
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+    sys.excepthook = exception_hook
 
 
 def check_and_install_dependencies() -> bool:
@@ -100,6 +157,7 @@ def check_admin() -> bool:
 
 
 def main() -> None:
+    setup_crash_handler()
     setup_logging()
     log = logging.getLogger(__name__)
     log.info("Zapret UI запускается (PyQt6)")

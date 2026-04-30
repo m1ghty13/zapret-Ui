@@ -13,6 +13,7 @@ import core.config as cfg
 import core.domains as domains_mod
 from core.runner import WinwsRunner
 from core.tester import StrategyTester
+from core.health_monitor import HealthMonitor
 from ui.panels.home import HomePanel
 from ui.panels.strategies import StrategiesPanel
 from ui.panels.domains import DomainsPanel
@@ -43,9 +44,13 @@ class MainWindow(QMainWindow):
         # Ядро
         self.runner = WinwsRunner(self)
         self.tester = StrategyTester(self)
+        self.health_monitor = HealthMonitor(self.runner.is_running, self)
 
         # Сигналы runner
         self.runner.status_changed.connect(self._on_status_changed)
+
+        # Сигналы health monitor
+        self.health_monitor.health_changed.connect(self._on_health_changed)
 
         self._sidebar_btns: dict[str, QPushButton] = {}
         self._current_page = "home"
@@ -160,6 +165,28 @@ class MainWindow(QMainWindow):
         # Обновляем иконку трея через родителя (tray слушает runner напрямую)
         home: HomePanel = self._panels["home"]  # type: ignore
         home.on_status_changed(running)
+
+        # Управляем health monitor
+        if running:
+            self.health_monitor.start()
+        else:
+            self.health_monitor.stop()
+
+    def _on_health_changed(self, is_healthy: bool) -> None:
+        """Обработка изменения статуса работоспособности."""
+        if not is_healthy:
+            log.warning("Стратегия перестала работать!")
+            # Показываем уведомление через трей (если есть)
+            from PyQt6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self,
+                "Zapret UI - Проблема с обходом",
+                "Текущая стратегия перестала работать.\n\n"
+                "Запустить автоматический тест для поиска рабочей стратегии?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.trigger_auto_test()
 
     def _on_test_finished(self, best: str, scores: dict) -> None:
         if best:
