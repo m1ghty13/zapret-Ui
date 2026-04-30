@@ -88,6 +88,10 @@ class TrayIcon:
         if cfg.get("ping_monitor_enabled", False):
             self._ping_monitor.start()
 
+    def show(self) -> None:
+        if self._tray:
+            self._tray.show()
+
         log.info("Системный трей создан (Qt native)")
 
     def _build_context_menu(self) -> QMenu:
