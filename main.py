@@ -172,6 +172,11 @@ def main() -> None:
     app.setApplicationName("Zapret UI")
     app.setQuitOnLastWindowClosed(False)  # Не выходим при закрытии окна (трей)
 
+    # Устанавливаем иконку приложения
+    icon_path = ROOT / "assets" / "icon-default.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
     # Single-instance lock
     socket = QLocalSocket()
     socket.connectToServer("ZapretUI_SingleInstance")

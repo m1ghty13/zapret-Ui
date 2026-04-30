@@ -42,6 +42,11 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960, 620)
         self.resize(cfg.get("window_width", 1100), cfg.get("window_height", 680))
 
+        # Устанавливаем иконку окна
+        icon_path = ROOT / "assets" / "icon-default.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
         # Ядро
         self.runner = WinwsRunner(self)
         self.tester = StrategyTester(self)
