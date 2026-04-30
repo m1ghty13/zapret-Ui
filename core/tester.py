@@ -1,9 +1,11 @@
 """Авто-тест всех стратегий с оценкой качества."""
+import asyncio
 import logging
+import socket
+import ssl
 import time
 from typing import Any
 
-import httpx
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 import core.config as cfg
@@ -12,8 +14,8 @@ from core.runner import WinwsRunner
 
 log = logging.getLogger(__name__)
 
-TEST_TIMEOUT = 5.0    # секунд на каждый домен
-SETTLE_TIME = 3.0     # секунд ждём после запуска winws
+TEST_TIMEOUT = 10.0   # секунд на каждый домен (увеличено для медленных стратегий)
+SETTLE_TIME = 5.0     # секунд ждём после запуска winws (увеличено)
 
 
 class _TestWorker(QThread):
@@ -87,19 +89,61 @@ class _TestWorker(QThread):
         self.finished.emit(best, all_scores)
 
     def _test_domains(self) -> int:
-        """Проверяет домены через httpx. Возвращает количество успешных."""
+        """Проверяет домены через TLS handshake. Возвращает количество успешных."""
         score = 0
         for domain in self._domains:
-            url = f"https://{domain}"
-            try:
-                with httpx.Client(timeout=TEST_TIMEOUT, verify=False) as client:
-                    resp = client.get(url, follow_redirects=True)
-                if resp.status_code < 500:
-                    score += 1
-                    log.debug("  ✓ %s (%d)", domain, resp.status_code)
-            except Exception as e:
-                log.debug("  ✗ %s: %s", domain, e)
+            if self._test_tls_handshake(domain):
+                score += 1
+                log.debug("  ✓ %s", domain)
+            else:
+                log.debug("  ✗ %s", domain)
         return score
+
+    def _test_tls_handshake(self, domain: str) -> bool:
+        """
+        Проверяет TLS handshake с доменом.
+        Это правильный способ проверки DPI bypass — проверяем именно ClientHello/ServerHello.
+        """
+        try:
+            # Создаём raw TCP socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(TEST_TIMEOUT)
+
+            # Подключаемся к 443
+            sock.connect((domain, 443))
+
+            # Оборачиваем в SSL context
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+            # Выполняем TLS handshake с правильным SNI
+            with context.wrap_socket(sock, server_hostname=domain) as ssock:
+                # Если дошли сюда — handshake успешен
+                return True
+
+        except socket.timeout:
+            log.debug("  ✗ %s: timeout", domain)
+            return False
+        except ConnectionRefusedError:
+            log.debug("  ✗ %s: connection refused", domain)
+            return False
+        except ssl.SSLError as e:
+            # SSL ошибка может быть из-за блокировки или проблем с сертификатом
+            # Если получили ServerHello но сертификат невалиден — это ОК для нашей проверки
+            if "certificate" in str(e).lower():
+                log.debug("  ✓ %s: handshake ok (cert issue ignored)", domain)
+                return True
+            log.debug("  ✗ %s: SSL error: %s", domain, e)
+            return False
+        except Exception as e:
+            log.debug("  ✗ %s: %s", domain, e)
+            return False
+        finally:
+            try:
+                sock.close()
+            except:
+                pass
 
     @staticmethod
     def _pick_best(scores: dict[str, dict[str, Any]]) -> str:

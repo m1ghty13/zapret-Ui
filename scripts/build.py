@@ -20,7 +20,6 @@ def main() -> None:
         "--add-data", "strategies;strategies",
         "--add-data", "assets;assets",
         "--hidden-import=PyQt6.sip",
-        "--hidden-import=httpx",
         "main.py",
     ]
     print("Запуск сборки:", " ".join(cmd))

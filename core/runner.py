@@ -2,6 +2,7 @@
 import logging
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
@@ -103,17 +104,44 @@ class WinwsRunner(QObject):
         return True
 
     def stop(self) -> None:
-        """Останавливает winws.exe."""
+        """Останавливает winws.exe с корректным освобождением WinDivert."""
         if self._process is None:
             return
+
+        log.info("Останавливаем winws.exe (PID: %d)", self._process.pid)
+
         try:
-            self._process.terminate()
-            self._process.wait(timeout=5)
-        except Exception:
+            if sys.platform == "win32":
+                # На Windows используем CTRL_BREAK_EVENT для graceful shutdown
+                import signal
+                try:
+                    self._process.send_signal(signal.CTRL_BREAK_EVENT)
+                    log.debug("Отправлен CTRL_BREAK_EVENT")
+                except Exception as e:
+                    log.debug("CTRL_BREAK_EVENT не сработал: %s", e)
+                    self._process.terminate()
+            else:
+                self._process.terminate()
+
+            # Ждём до 3 секунд
+            for _ in range(30):
+                if self._process.poll() is not None:
+                    log.info("winws.exe завершён корректно")
+                    break
+                time.sleep(0.1)
+            else:
+                # Если не завершился — kill
+                log.warning("winws.exe не ответил на terminate, принудительная остановка")
+                self._process.kill()
+                self._process.wait(timeout=2)
+
+        except Exception as e:
+            log.error("Ошибка при остановке winws.exe: %s", e)
             try:
                 self._process.kill()
             except Exception:
                 pass
+
         self._process = None
         self._current_strategy = ""
 

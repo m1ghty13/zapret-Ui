@@ -17,7 +17,6 @@ def check_and_install_dependencies() -> bool:
         'PyQt6': 'PyQt6>=6.6.0',
         'pystray': 'pystray>=0.19.0',
         'PIL': 'Pillow>=10.0.0',
-        'httpx': 'httpx>=0.27.0',
     }
 
     missing_packages = []
@@ -66,8 +65,9 @@ if not check_and_install_dependencies():
     input("\nНажмите Enter для выхода...")
     sys.exit(1)
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 import core.config as cfg
 from ui.main_window import MainWindow
 from ui.tray import create_tray_icon
@@ -115,6 +115,22 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Zapret UI")
     app.setQuitOnLastWindowClosed(False)  # Не выходим при закрытии окна (трей)
+
+    # Single-instance lock
+    socket = QLocalSocket()
+    socket.connectToServer("ZapretUI_SingleInstance")
+    if socket.waitForConnected(500):
+        log.warning("Another instance is already running")
+        QMessageBox.warning(
+            None,
+            "Zapret UI",
+            "Приложение уже запущено.\nПроверьте системный трей."
+        )
+        sys.exit(0)
+
+    server = QLocalServer()
+    server.listen("ZapretUI_SingleInstance")
+    log.info("Single-instance lock acquired")
 
     # Применяем тему
     from ui.theme import apply_theme
