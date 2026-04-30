@@ -1,10 +1,9 @@
-"""Zapret UI — точка входа."""
+"""Zapret UI — точка входа (нативный PyQt6)."""
 import sys
 import os
 import logging
 import logging.handlers
 import subprocess
-import threading
 from pathlib import Path
 
 # Добавляем корень проекта в sys.path (нужно для PyInstaller)
@@ -15,9 +14,7 @@ sys.path.insert(0, str(ROOT))
 def check_and_install_dependencies() -> bool:
     """Проверяем и устанавливаем недостающие зависимости."""
     required_packages = {
-        'flask': 'flask>=3.0.0',
-        'flask_cors': 'flask-cors>=4.0.0',
-        'webview': 'pywebview>=5.0.0',
+        'PyQt6': 'PyQt6>=6.6.0',
         'pystray': 'pystray>=0.19.0',
         'PIL': 'Pillow>=10.0.0',
         'httpx': 'httpx>=0.27.0',
@@ -69,9 +66,11 @@ if not check_and_install_dependencies():
     input("\nНажмите Enter для выхода...")
     sys.exit(1)
 
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QIcon
 import core.config as cfg
-from api.server import start_server
-from api.bridge import JSBridge
+from ui.main_window import MainWindow
+from ui.tray import create_tray_icon
 
 
 def setup_logging() -> None:
@@ -100,38 +99,10 @@ def check_admin() -> bool:
         return True
 
 
-def build_react_app() -> bool:
-    """Build React app if dist/ doesn't exist."""
-    dist_dir = ROOT / "dist"
-    if dist_dir.exists() and (dist_dir / "index.html").exists():
-        return True
-
-    log = logging.getLogger(__name__)
-    log.info("Building React app...")
-
-    try:
-        # Check if node_modules exists
-        if not (ROOT / "node_modules").exists():
-            log.info("Installing npm dependencies...")
-            subprocess.run(["npm", "install"], cwd=ROOT, check=True)
-
-        # Build the app
-        subprocess.run(["npm", "run", "build"], cwd=ROOT, check=True)
-        log.info("React app built successfully")
-        return True
-
-    except subprocess.CalledProcessError as e:
-        log.error("Failed to build React app: %s", e)
-        return False
-    except FileNotFoundError:
-        log.error("npm not found. Please install Node.js")
-        return False
-
-
 def main() -> None:
     setup_logging()
     log = logging.getLogger(__name__)
-    log.info("Zapret UI запускается")
+    log.info("Zapret UI запускается (PyQt6)")
 
     # Загружаем конфиг
     cfg.load()
@@ -140,137 +111,30 @@ def main() -> None:
     if not check_admin():
         log.warning("Running without admin privileges")
 
-    # Build React app if needed
-    if not build_react_app():
-        log.error("Cannot start: React app build failed")
-        sys.exit(1)
+    # Создаём Qt приложение
+    app = QApplication(sys.argv)
+    app.setApplicationName("Zapret UI")
+    app.setQuitOnLastWindowClosed(False)  # Не выходим при закрытии окна (трей)
 
-    # Start Flask server
-    port = start_server()
-    url = f"http://127.0.0.1:{port}"
+    # Применяем тему
+    from ui.theme import apply_theme
+    apply_theme(app)
 
-    log.info("Flask server started on port %d", port)
+    # Главное окно
+    window = MainWindow()
 
-    # Initialize runner for tray
-    from api.runner_wrapper import FlaskRunner
-    from queue import Queue
-    log_queue = Queue()
-    runner = FlaskRunner(log_queue)
-
-    # Create system tray icon
-    from api.tray import TrayIcon
-    tray = TrayIcon(runner, port)
-    tray_icon = tray.create_icon()
-
-    # Try to use pywebview (native window)
-    use_webview = True
-
-    if use_webview:
-        try:
-            import webview
-
-            log.info("Starting pywebview window at %s", url)
-
-            # Create JS bridge
-            bridge = JSBridge()
-
-            # Create webview window
-            window = webview.create_window(
-                title="Zapret UI",
-                url=url,
-                js_api=bridge,
-                width=1100,
-                height=680,
-                min_size=(960, 620),
-                resizable=True,
-                frameless=False,
-                on_top=False,
-            )
-
-            # Store window reference in tray
-            if tray_icon:
-                tray.window = window
-
-            # Start tray icon in background thread
-            if tray_icon:
-                tray_thread = threading.Thread(target=tray.run, daemon=True)
-                tray_thread.start()
-                log.info("System tray icon started")
-
-            # Handle window close event
-            def on_closing():
-                minimize_to_tray = cfg.get("minimize_to_tray", True)
-                if minimize_to_tray and tray_icon:
-                    log.info("Minimizing to tray")
-                    window.hide()
-                    if tray_icon:
-                        tray_icon.notify("Zapret UI", "Свернуто в трей")
-                    return False
-                else:
-                    log.info("Closing application")
-                    if runner.is_running():
-                        runner.stop()
-                    if tray_icon:
-                        tray.stop()
-                    return True
-
-            window.events.closing += on_closing
-
-            log.info("UI инициализирован")
-            webview.start(debug=False)
-
-        except Exception as e:
-            log.error("PyWebView error: %s", e)
-            log.info("Falling back to browser mode")
-            use_webview = False
-
-    if not use_webview:
-        # Browser mode (macOS or pywebview failed)
-        log.info("Running in browser mode")
-        log.info("=" * 60)
-        log.info("Zapret UI запущен!")
-        log.info("=" * 60)
-        log.info("")
-        log.info("Откройте в браузере: %s", url)
-        log.info("")
-
-        if tray_icon:
-            log.info("Иконка в трее доступна для управления")
-            log.info("")
-
-        log.info("Нажмите Ctrl+C для остановки")
-        log.info("=" * 60)
-
-        # Open browser automatically on macOS
-        if sys.platform == "darwin":
-            try:
-                subprocess.run(["open", url])
-            except:
-                pass
-
-        # Start tray icon in background
-        if tray_icon:
-            tray_thread = threading.Thread(target=tray.run, daemon=True)
-            tray_thread.start()
-            log.info("System tray icon started")
-
-        # Keep running
-        try:
-            import time
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            log.info("\nStopping...")
-            if runner.is_running():
-                runner.stop()
-            if tray_icon:
-                tray.stop()
-
-    # Cleanup on exit
-    if runner.is_running():
-        runner.stop()
+    # Системный трей
+    tray_icon = create_tray_icon(window, app)
     if tray_icon:
-        tray.stop()
+        tray_icon.show()
+        log.info("System tray icon created")
+
+    # Показываем окно
+    window.show()
+    log.info("UI инициализирован")
+
+    # Запускаем event loop
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
