@@ -7,27 +7,58 @@ ROOT = Path(__file__).parent.parent
 
 
 def main() -> None:
+    # Проверяем существование main.py
+    main_py = ROOT / "main.py"
+    if not main_py.exists():
+        print(f"✗ Ошибка: {main_py} не найден")
+        print(f"  Текущая директория: {Path.cwd()}")
+        print(f"  ROOT директория: {ROOT}")
+        sys.exit(1)
+
     manifest_path = ROOT / "scripts" / "ZapretUI.manifest"
+    icon_path = ROOT / "assets" / "icon-default.ico"
+
+    # Проверяем иконку
+    if not icon_path.exists():
+        print(f"⚠ Предупреждение: иконка не найдена: {icon_path}")
+        icon_arg = []
+    else:
+        icon_arg = ["--icon", str(icon_path)]
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",
         "--name=ZapretUI",
-        "--icon=assets/icon.ico",
+        *icon_arg,
         "--manifest", str(manifest_path),
         "--add-data", "bin;bin",
         "--add-data", "lists;lists",
         "--add-data", "strategies;strategies",
         "--add-data", "assets;assets",
         "--hidden-import=PyQt6.sip",
-        "main.py",
+        str(main_py),
     ]
-    print("Запуск сборки:", " ".join(cmd))
+
+    print("=" * 60)
+    print("Сборка Zapret UI")
+    print("=" * 60)
+    print(f"ROOT: {ROOT}")
+    print(f"main.py: {main_py}")
+    print(f"Запуск PyInstaller...")
+    print()
+
     result = subprocess.run(cmd, cwd=str(ROOT))
+
+    print()
+    print("=" * 60)
     if result.returncode == 0:
-        print("\n✓ Сборка успешна. Файл: dist/ZapretUI.exe")
+        print("✓ Сборка успешна!")
+        print(f"  Файл: {ROOT / 'dist' / 'ZapretUI.exe'}")
     else:
-        print("\n✗ Сборка завершилась с ошибкой")
+        print("✗ Сборка завершилась с ошибкой")
+    print("=" * 60)
+
     sys.exit(result.returncode)
 
 
